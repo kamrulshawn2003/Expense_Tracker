@@ -1,0 +1,6 @@
+{
+  "name": "Expense Tracker",
+  "description": "Daily expense calculator with category spending tracking, monthly budget reports, fixed savings goals, and limit exceed notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
