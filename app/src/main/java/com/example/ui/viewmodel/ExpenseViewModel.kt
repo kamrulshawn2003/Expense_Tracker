@@ -31,7 +31,10 @@ data class CategorySpendingSummary(
   val percentageOfLimit: Float,
   val percentageOfTotal: Float,
   val isExceeded: Boolean,
-  val isWarning: Boolean
+  val isWarning: Boolean,
+  val pictureUri: String? = null,
+  val iconName: String = "category",
+  val colorHex: Long = 0xFF10B981
 )
 
 data class DaySpendingSummary(
@@ -177,13 +180,18 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val spentByCategory = monthExpensesList.groupBy { it.category }
       .mapValues { entry -> entry.value.sumOf { it.amount } }
 
-    val allCategoryNames = (DefaultCategories.list.map { it.name } + budgetsList.map { it.categoryName } + spentByCategory.keys).distinct()
+    val allCategoryNames = (budgetsList.map { it.categoryName } + spentByCategory.keys).distinct()
 
     val categorySummaries = allCategoryNames.map { catName ->
       val spent = spentByCategory[catName] ?: 0.0
-      val limit = budgetMap[catName]?.monthlyLimit
+      val budgetItem = budgetMap[catName]
+      val limit = budgetItem?.monthlyLimit
         ?: DefaultCategories.getMeta(catName).defaultLimit
-      val meta = DefaultCategories.getMeta(catName)
+      val meta = DefaultCategories.getMeta(
+        name = catName,
+        iconName = budgetItem?.iconName,
+        colorHex = budgetItem?.colorHex
+      )
       val percentOfLimit = if (limit > 0) (spent / limit).toFloat() else 0f
       val percentOfTotal = if (totalSpent > 0) ((spent / totalSpent) * 100).toFloat() else 0f
       val isExceeded = limit > 0 && spent > limit
@@ -197,7 +205,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         percentageOfLimit = percentOfLimit,
         percentageOfTotal = percentOfTotal,
         isExceeded = isExceeded,
-        isWarning = isWarning
+        isWarning = isWarning,
+        pictureUri = budgetItem?.pictureUri,
+        iconName = budgetItem?.iconName ?: meta.iconName,
+        colorHex = budgetItem?.colorHex ?: meta.color.value.toLong()
       )
     }.sortedByDescending { it.spent }
 
@@ -345,7 +356,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     category: String,
     dateMillis: Long = _selectedDateMillis.value,
     note: String = "",
-    paymentMethod: String = "Card"
+    paymentMethod: String = "Card",
+    pictureUri: String? = null
   ) {
     if (amount <= 0 || title.isBlank()) return
     viewModelScope.launch {
@@ -356,7 +368,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           category = category,
           dateMillis = dateMillis,
           note = note.trim(),
-          paymentMethod = paymentMethod
+          paymentMethod = paymentMethod,
+          pictureUri = pictureUri
         )
       )
     }
@@ -380,15 +393,49 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
-  fun updateCategoryLimit(categoryName: String, newLimit: Double) {
+  fun saveCategoryBudget(
+    categoryName: String,
+    limit: Double,
+    iconName: String = "category",
+    colorHex: Long = 0xFF10B981,
+    pictureUri: String? = null
+  ) {
     viewModelScope.launch {
-      val meta = DefaultCategories.getMeta(categoryName)
+      repository.saveCategoryBudget(
+        CategoryBudgetEntity(
+          categoryName = categoryName.trim(),
+          monthlyLimit = limit,
+          iconName = iconName,
+          colorHex = colorHex,
+          pictureUri = pictureUri
+        )
+      )
+    }
+  }
+
+  fun deleteCategoryBudget(categoryName: String) {
+    viewModelScope.launch {
+      repository.deleteCategoryBudget(categoryName)
+    }
+  }
+
+  fun updateCategoryLimit(
+    categoryName: String,
+    newLimit: Double,
+    iconName: String? = null,
+    colorHex: Long? = null,
+    pictureUri: String? = null
+  ) {
+    viewModelScope.launch {
+      val existing = categoryBudgets.value.find { it.categoryName == categoryName }
+      val meta = DefaultCategories.getMeta(categoryName, existing?.iconName, existing?.colorHex)
       repository.updateCategoryBudget(
         CategoryBudgetEntity(
           categoryName = categoryName,
           monthlyLimit = newLimit,
-          iconName = meta.iconName,
-          colorHex = meta.color.value.toLong()
+          iconName = iconName ?: existing?.iconName ?: meta.iconName,
+          colorHex = colorHex ?: existing?.colorHex ?: meta.color.value.toLong(),
+          pictureUri = if (pictureUri != null) pictureUri else existing?.pictureUri
         )
       )
     }

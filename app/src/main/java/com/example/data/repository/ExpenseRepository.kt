@@ -76,6 +76,17 @@ class ExpenseRepository(
     expenseDao.insertOrUpdateCategoryBudget(budget)
   }
 
+  suspend fun saveCategoryBudget(budget: CategoryBudgetEntity) {
+    expenseDao.insertOrUpdateCategoryBudget(budget)
+  }
+
+  suspend fun deleteCategoryBudget(categoryName: String) {
+    // Reassign existing expenses from this category to "Other" so they are safely retained
+    expenseDao.updateExpenseCategory(categoryName, "Other")
+    // Delete the budget from database
+    expenseDao.deleteCategoryBudgetByName(categoryName)
+  }
+
   suspend fun updateMonthlyGoal(goal: MonthlyGoalEntity) {
     expenseDao.insertOrUpdateMonthlyGoal(goal)
   }
@@ -116,15 +127,19 @@ class ExpenseRepository(
   }
 
   suspend fun ensureDefaultBudgets() {
-    val defaults = DefaultCategories.list.map {
-      CategoryBudgetEntity(
-        categoryName = it.name,
-        monthlyLimit = it.defaultLimit,
-        iconName = it.iconName,
-        colorHex = it.color.value.toLong()
-      )
+    val existing = expenseDao.getAllCategoryBudgetsSync()
+    if (existing.isEmpty()) {
+      val defaults = DefaultCategories.list.map {
+        CategoryBudgetEntity(
+          categoryName = it.name,
+          monthlyLimit = it.defaultLimit,
+          iconName = it.iconName,
+          colorHex = it.color.value.toLong(),
+          pictureUri = null
+        )
+      }
+      expenseDao.insertCategoryBudgets(defaults)
     }
-    expenseDao.insertCategoryBudgets(defaults)
   }
 
   suspend fun populateSampleData() {

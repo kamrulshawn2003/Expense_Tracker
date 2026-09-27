@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
 import android.app.DatePickerDialog
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,8 +15,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,15 +30,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -43,7 +52,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,17 +64,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.data.model.DefaultCategories
 import com.example.data.model.ExpenseEntity
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import com.example.ui.viewmodel.ExpenseViewModel
+import com.example.util.ImageStorageHelper
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -80,6 +97,7 @@ fun AddExpenseBottomSheet(
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val context = LocalContext.current
+  val dbBudgets by viewModel.categoryBudgets.collectAsStateWithLifecycle()
 
   var title by remember { mutableStateOf(editingExpense?.title ?: "") }
   var amountInput by remember {
@@ -97,6 +115,32 @@ fun AddExpenseBottomSheet(
     mutableStateOf(editingExpense?.paymentMethod ?: "Card")
   }
   var note by remember { mutableStateOf(editingExpense?.note ?: "") }
+  var pictureUri by remember { mutableStateOf(editingExpense?.pictureUri) }
+  var showFullScreenPreview by remember { mutableStateOf(false) }
+
+  // Gallery photo picker launcher
+  val galleryLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    uri?.let {
+      val savedPath = ImageStorageHelper.saveImageFromUri(context, it, "receipts")
+      if (savedPath != null) {
+        pictureUri = savedPath
+      }
+    }
+  }
+
+  // Camera capture launcher
+  val cameraLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicturePreview()
+  ) { bitmap: Bitmap? ->
+    bitmap?.let {
+      val savedPath = ImageStorageHelper.saveBitmap(context, it, "receipts")
+      if (savedPath != null) {
+        pictureUri = savedPath
+      }
+    }
+  }
 
   // Quick title presets
   val quickPresets = listOf(
@@ -106,7 +150,20 @@ fun AddExpenseBottomSheet(
 
   val paymentMethods = listOf("Card", "Cash", "Digital Wallet", "Bank Transfer")
 
-  // Safe arithmetic evaluator for calculator expressions (e.g., "12 + 5.50 * 2")
+  // Available categories: combine DB budgets and default categories
+  val availableCategories = remember(dbBudgets) {
+    val fromDb = dbBudgets.map {
+      DefaultCategories.getMeta(it.categoryName, it.iconName, it.colorHex)
+    }
+    if (fromDb.isNotEmpty()) {
+      val names = fromDb.map { it.name }.toSet()
+      val extras = DefaultCategories.list.filter { it.name !in names }
+      fromDb + extras
+    } else {
+      DefaultCategories.list
+    }
+  }
+
   fun evaluateAmount(expr: String): Double? {
     val clean = expr.replace(" ", "").replace(",", ".")
     if (clean.isBlank()) return null
@@ -263,7 +320,6 @@ fun AddExpenseBottomSheet(
               .clip(RoundedCornerShape(12.dp))
               .clickable {
                 title = preset
-                // Auto-suggest category based on preset
                 when (preset) {
                   "Coffee", "Lunch", "Dinner", "Snacks" -> selectedCategory = "Food & Dining"
                   "Groceries" -> selectedCategory = "Groceries"
@@ -298,7 +354,7 @@ fun AddExpenseBottomSheet(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
       ) {
-        DefaultCategories.list.forEach { cat ->
+        availableCategories.forEach { cat ->
           val isSelected = selectedCategory.equals(cat.name, ignoreCase = true)
           FilterChip(
             selected = isSelected,
@@ -324,13 +380,12 @@ fun AddExpenseBottomSheet(
         }
       }
 
-      // Date Picker & Payment Method
+      // Date Picker
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        // Date Selector button
         val dateFormatted = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(selectedDateMillis))
         OutlinedButton(
           onClick = {
@@ -392,12 +447,131 @@ fun AddExpenseBottomSheet(
         }
       }
 
+      // Receipt / Picture Attachment Section
+      Text(
+        text = "Receipt / Attachment",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold
+      )
+
+      if (pictureUri != null) {
+        // Preview Card
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+          AsyncImage(
+            model = ImageRequest.Builder(context)
+              .data(pictureUri)
+              .crossfade(true)
+              .build(),
+            contentDescription = "Receipt Attachment",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+              .fillMaxSize()
+              .clickable { showFullScreenPreview = true }
+          )
+
+          // Click to view prompt
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color.Black.copy(alpha = 0.5f),
+            modifier = Modifier
+              .align(Alignment.BottomStart)
+              .padding(8.dp)
+              .clickable { showFullScreenPreview = true }
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(Icons.Default.ZoomIn, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Tap to view full receipt", color = Color.White, fontSize = 11.sp)
+            }
+          }
+
+          // Top action buttons: Change & Remove
+          Row(
+            modifier = Modifier
+              .align(Alignment.TopEnd)
+              .padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Surface(
+              shape = CircleShape,
+              color = Color.Black.copy(alpha = 0.6f),
+              modifier = Modifier.size(32.dp)
+            ) {
+              IconButton(
+                onClick = {
+                  galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                modifier = Modifier.size(32.dp)
+              ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = "Change photo", tint = Color.White, modifier = Modifier.size(16.dp))
+              }
+            }
+
+            Surface(
+              shape = CircleShape,
+              color = Color.Black.copy(alpha = 0.6f),
+              modifier = Modifier.size(32.dp)
+            ) {
+              IconButton(
+                onClick = { pictureUri = null },
+                modifier = Modifier.size(32.dp)
+              ) {
+                Icon(Icons.Default.Close, contentDescription = "Remove photo", tint = Color.White, modifier = Modifier.size(16.dp))
+              }
+            }
+          }
+        }
+      } else {
+        // Attachment Buttons
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          OutlinedButton(
+            onClick = { cameraLauncher.launch(null) },
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+              .weight(1f)
+              .testTag("expense_camera_button"),
+            contentPadding = PaddingValues(vertical = 12.dp)
+          ) {
+            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Take Photo", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+          }
+
+          OutlinedButton(
+            onClick = {
+              galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+              .weight(1f)
+              .testTag("expense_gallery_button"),
+            contentPadding = PaddingValues(vertical = 12.dp)
+          ) {
+            Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery", modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Add Receipt", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+          }
+        }
+      }
+
       // Optional Note
       OutlinedTextField(
         value = note,
         onValueChange = { note = it },
         label = { Text("Note (Optional)") },
-        placeholder = { Text("Additional details or receipt ref") },
+        placeholder = { Text("Additional details or invoice ref") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -415,7 +589,8 @@ fun AddExpenseBottomSheet(
                 category = selectedCategory,
                 dateMillis = selectedDateMillis,
                 note = note,
-                paymentMethod = selectedPaymentMethod
+                paymentMethod = selectedPaymentMethod,
+                pictureUri = pictureUri
               )
             } else {
               viewModel.updateExpense(
@@ -425,7 +600,8 @@ fun AddExpenseBottomSheet(
                   category = selectedCategory,
                   dateMillis = selectedDateMillis,
                   note = note.trim(),
-                  paymentMethod = selectedPaymentMethod
+                  paymentMethod = selectedPaymentMethod,
+                  pictureUri = pictureUri
                 )
               )
             }
@@ -449,6 +625,41 @@ fun AddExpenseBottomSheet(
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold
         )
+      }
+    }
+  }
+
+  // Full Screen Preview Dialog
+  if (showFullScreenPreview && pictureUri != null) {
+    Dialog(
+      onDismissRequest = { showFullScreenPreview = false },
+      properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color.Black.copy(alpha = 0.9f))
+      ) {
+        AsyncImage(
+          model = ImageRequest.Builder(context)
+            .data(pictureUri)
+            .crossfade(true)
+            .build(),
+          contentDescription = "Full Receipt",
+          contentScale = ContentScale.Fit,
+          modifier = Modifier.fillMaxSize()
+        )
+
+        IconButton(
+          onClick = { showFullScreenPreview = false },
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(16.dp)
+            .size(40.dp)
+            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+        ) {
+          Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+        }
       }
     }
   }

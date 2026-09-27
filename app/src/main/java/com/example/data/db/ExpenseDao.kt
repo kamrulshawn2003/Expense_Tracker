@@ -43,6 +43,9 @@ interface ExpenseDao {
   @Query("SELECT * FROM category_budgets")
   fun getAllCategoryBudgets(): Flow<List<CategoryBudgetEntity>>
 
+  @Query("SELECT * FROM category_budgets")
+  suspend fun getAllCategoryBudgetsSync(): List<CategoryBudgetEntity>
+
   @Query("SELECT * FROM category_budgets WHERE categoryName = :name LIMIT 1")
   suspend fun getCategoryBudgetSync(name: String): CategoryBudgetEntity?
 
@@ -51,6 +54,12 @@ interface ExpenseDao {
 
   @Insert(onConflict = OnConflictStrategy.IGNORE)
   suspend fun insertCategoryBudgets(budgets: List<CategoryBudgetEntity>)
+
+  @Query("DELETE FROM category_budgets WHERE categoryName = :categoryName")
+  suspend fun deleteCategoryBudgetByName(categoryName: String)
+
+  @Query("UPDATE expenses SET category = :newCategory WHERE category = :oldCategory")
+  suspend fun updateExpenseCategory(oldCategory: String, newCategory: String)
 
   // Monthly Goals
   @Query("SELECT * FROM monthly_goals WHERE yearMonth = :yearMonth LIMIT 1")

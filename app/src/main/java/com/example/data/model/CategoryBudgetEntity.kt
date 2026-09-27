@@ -8,5 +8,6 @@ data class CategoryBudgetEntity(
   @PrimaryKey val categoryName: String,
   val monthlyLimit: Double,
   val iconName: String = "category",
-  val colorHex: Long = 0xFF10B981
+  val colorHex: Long = 0xFF10B981,
+  val pictureUri: String? = null
 )

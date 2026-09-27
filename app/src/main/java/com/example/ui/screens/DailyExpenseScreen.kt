@@ -28,11 +28,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -42,6 +45,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +91,9 @@ fun DailyExpenseScreen(
   val todayExpenses by viewModel.selectedDayExpenses.collectAsStateWithLifecycle()
   val monthlyReport by viewModel.monthlyReport.collectAsStateWithLifecycle()
   val activeAlerts by viewModel.activeAlerts.collectAsStateWithLifecycle()
+  val dbBudgets by viewModel.categoryBudgets.collectAsStateWithLifecycle()
+
+  var viewingReceiptExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
 
   val totalSpentToday = todayExpenses.sumOf { it.amount }
   val currency = monthlyReport.currencySymbol
@@ -412,7 +423,8 @@ fun DailyExpenseScreen(
         }
       } else {
         items(todayExpenses, key = { it.id }) { expense ->
-          val meta = DefaultCategories.getMeta(expense.category)
+          val budgetMatch = dbBudgets.find { it.categoryName.equals(expense.category, ignoreCase = true) }
+          val meta = DefaultCategories.getMeta(expense.category, budgetMatch?.iconName, budgetMatch?.colorHex)
           val timeFormatted = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(expense.dateMillis))
 
           Card(
@@ -484,6 +496,45 @@ fun DailyExpenseScreen(
 
               Spacer(modifier = Modifier.width(8.dp))
 
+              // Receipt Picture Thumbnail (if attached)
+              if (!expense.pictureUri.isNullOrBlank()) {
+                Box(
+                  modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { viewingReceiptExpense = expense }
+                    .testTag("expense_receipt_thumb_${expense.id}")
+                ) {
+                  AsyncImage(
+                    model = ImageRequest.Builder(context)
+                      .data(expense.pictureUri)
+                      .crossfade(true)
+                      .build(),
+                    contentDescription = "Receipt thumbnail",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                  )
+
+                  Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.65f),
+                    modifier = Modifier
+                      .size(16.dp)
+                      .align(Alignment.BottomEnd)
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.Receipt,
+                      contentDescription = null,
+                      tint = Color.White,
+                      modifier = Modifier.padding(2.dp)
+                    )
+                  }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+              }
+
               Column(horizontalAlignment = Alignment.End) {
                 Text(
                   text = String.format(Locale.getDefault(), "-%s%.2f", currency, expense.amount),
@@ -494,6 +545,71 @@ fun DailyExpenseScreen(
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // Full Screen Receipt Preview Dialog
+  if (viewingReceiptExpense != null && !viewingReceiptExpense?.pictureUri.isNullOrBlank()) {
+    val viewing = viewingReceiptExpense!!
+    Dialog(
+      onDismissRequest = { viewingReceiptExpense = null },
+      properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color.Black.copy(alpha = 0.92f))
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column {
+              Text(
+                text = viewing.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+              )
+              Text(
+                text = String.format(Locale.getDefault(), "%s • %s%.2f", viewing.category, currency, viewing.amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.8f)
+              )
+            }
+
+            IconButton(
+              onClick = { viewingReceiptExpense = null },
+              modifier = Modifier
+                .size(36.dp)
+                .background(Color.White.copy(alpha = 0.2f), CircleShape)
+            ) {
+              Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+          }
+
+          Spacer(modifier = Modifier.height(16.dp))
+
+          AsyncImage(
+            model = ImageRequest.Builder(context)
+              .data(viewing.pictureUri)
+              .crossfade(true)
+              .build(),
+            contentDescription = viewing.title,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+              .weight(1f)
+              .fillMaxWidth()
+          )
         }
       }
     }
