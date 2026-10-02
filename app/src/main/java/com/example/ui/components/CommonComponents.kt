@@ -97,6 +97,7 @@ fun CategoryIconBadge(
 fun LimitAlertBanner(
   alerts: List<CategorySpendingSummary>,
   onDismiss: (String) -> Unit,
+  currencySymbol: String = "$",
   modifier: Modifier = Modifier
 ) {
   if (alerts.isEmpty()) return
@@ -160,8 +161,10 @@ fun LimitAlertBanner(
               Text(
                 text = String.format(
                   Locale.getDefault(),
-                  "Spent $%.2f of $%.2f limit (+$%.2f over)",
-                  alert.spent, alert.limit, alert.spent - alert.limit
+                  "Spent %s%.2f of %s%.2f limit (+%s%.2f over)",
+                  currencySymbol, alert.spent,
+                  currencySymbol, alert.limit,
+                  currencySymbol, alert.spent - alert.limit
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

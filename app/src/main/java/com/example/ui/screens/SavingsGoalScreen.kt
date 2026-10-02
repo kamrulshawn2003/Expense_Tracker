@@ -5,13 +5,16 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,12 +37,17 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -112,8 +120,15 @@ fun SavingsGoalScreen(
   var isSavedNoticeVisible by remember { mutableStateOf(false) }
   var showResetCycleDialog by remember { mutableStateOf(false) }
 
-  val targetSavings = savingsGoalInput.toDoubleOrNull() ?: monthlyGoal.savingsGoal
-  val currentIncome = incomeInput.toDoubleOrNull() ?: monthlyGoal.monthlyIncome
+  val targetSavings = (savingsGoalInput.toDoubleOrNull() ?: monthlyGoal.savingsGoal).coerceAtLeast(0.0)
+  val currentIncome = (incomeInput.toDoubleOrNull() ?: monthlyGoal.monthlyIncome).coerceAtLeast(0.0)
+  val restCountedForSpendings = (currentIncome - targetSavings).coerceAtLeast(0.0)
+  val totalSpentThisMonth = monthlyReport.totalSpent
+  val remainingForSpendings = restCountedForSpendings - totalSpentThisMonth
+  val spendingRatio = if (restCountedForSpendings > 0) (totalSpentThisMonth / restCountedForSpendings).toFloat() else 0f
+  val dailySpendingAllowance = if (monthlyReport.daysInCycle > 0) (restCountedForSpendings / monthlyReport.daysInCycle) else (restCountedForSpendings / 30.0)
+  val savingsPercentage = if (currentIncome > 0) ((targetSavings / currentIncome) * 100).coerceIn(0.0, 100.0) else 0.0
+  val spendingsPercentage = if (currentIncome > 0) ((restCountedForSpendings / currentIncome) * 100).coerceIn(0.0, 100.0) else 0.0
   val sixMonthProjection = targetSavings * 6
   val oneYearProjection = targetSavings * 12
 
@@ -153,12 +168,39 @@ fun SavingsGoalScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text(
-                  text = "Monthly Savings Goal",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = Color.White
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text(
+                    text = "Monthly Savings Amount",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color.White.copy(alpha = 0.25f)
+                  ) {
+                    Row(
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(12.dp)
+                      )
+                      Spacer(modifier = Modifier.width(3.dp))
+                      Text(
+                        text = "Protected",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                      )
+                    }
+                  }
+                }
+
                 Box(
                   modifier = Modifier
                     .size(40.dp)
@@ -182,8 +224,36 @@ fun SavingsGoalScreen(
                 color = Color.White
               )
 
+              // Rest counted for spendings banner inside hero
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White.copy(alpha = 0.2f),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = "Rest Counted for Spendings:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.95f),
+                    fontWeight = FontWeight.Medium
+                  )
+                  Text(
+                    text = String.format(Locale.getDefault(), "%s%.2f", currency, restCountedForSpendings),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold
+                  )
+                }
+              }
+
               Text(
-                text = "Target to set aside each month before allocating category budgets.",
+                text = "Savings amount has no relation with spending amount. When you add savings, the remaining amount is counted for spendings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.9f)
               )
@@ -192,7 +262,263 @@ fun SavingsGoalScreen(
         }
       }
 
-      // 2. Goal & Income Settings Form
+      // 2. Savings & Spendings Allocation Card
+      item {
+        Card(
+          shape = RoundedCornerShape(20.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Box(
+                modifier = Modifier
+                  .size(36.dp)
+                  .clip(CircleShape)
+                  .background(IncomeGreen.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Payments,
+                  contentDescription = null,
+                  tint = IncomeGreen,
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+              Spacer(modifier = Modifier.width(10.dp))
+              Column {
+                Text(
+                  text = "Income & Spendings Allocation",
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold
+                )
+                Text(
+                  text = "Rest of income counted for spendings after savings",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+            }
+
+            // 3-Metric Equation Grid: Income - Savings = Spendings
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              // Income
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.weight(1f)
+              ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                  Text(
+                    text = "Income",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = String.format(Locale.getDefault(), "%s%.0f", currency, currentIncome),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                  )
+                }
+              }
+
+              // (-) Savings
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = GoalGold.copy(alpha = 0.12f),
+                modifier = Modifier.weight(1f)
+              ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                  Text(
+                    text = "(-) Savings",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GoalGold,
+                    fontWeight = FontWeight.Bold
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = String.format(Locale.getDefault(), "%s%.0f", currency, targetSavings),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = GoalGold
+                  )
+                }
+              }
+
+              // (=) Spendings Budget
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = IncomeGreen.copy(alpha = 0.15f),
+                modifier = Modifier.weight(1.15f)
+              ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                  Text(
+                    text = "(=) Spendings",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = IncomeGreen,
+                    fontWeight = FontWeight.Bold
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = String.format(Locale.getDefault(), "%s%.0f", currency, restCountedForSpendings),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = IncomeGreen
+                  )
+                }
+              }
+            }
+
+            // Visual income allocation distribution
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Text(
+                  text = String.format(Locale.getDefault(), "Savings: %.0f%%", savingsPercentage),
+                  style = MaterialTheme.typography.labelSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = GoalGold
+                )
+                Text(
+                  text = String.format(Locale.getDefault(), "Spendings: %.0f%%", spendingsPercentage),
+                  style = MaterialTheme.typography.labelSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = IncomeGreen
+                )
+              }
+
+              // Multi-segment visual bar
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(10.dp)
+                  .clip(RoundedCornerShape(5.dp))
+                  .background(MaterialTheme.colorScheme.surfaceVariant)
+              ) {
+                val savingsWeight = (targetSavings / currentIncome.coerceAtLeast(1.0)).toFloat().coerceIn(0.01f, 0.99f)
+                val spendingsWeight = 1f - savingsWeight
+
+                Box(
+                  modifier = Modifier
+                    .weight(savingsWeight)
+                    .fillMaxSize()
+                    .background(GoalGold)
+                )
+                Box(
+                  modifier = Modifier
+                    .weight(spendingsWeight)
+                    .fillMaxSize()
+                    .background(IncomeGreen)
+                )
+              }
+            }
+
+            // Current Month Spendings Tracker against Counted Spendings Budget
+            Surface(
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = "Spendings in Active Month:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  Text(
+                    text = String.format(
+                      Locale.getDefault(),
+                      "%s%.2f / %s%.2f",
+                      currency, totalSpentThisMonth,
+                      currency, restCountedForSpendings
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                  )
+                }
+
+                LinearProgressIndicator(
+                  progress = { spendingRatio.coerceIn(0f, 1f) },
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                  color = if (remainingForSpendings < 0) ExpenseRed else if (spendingRatio >= 0.8f) GoalGold else IncomeGreen,
+                  trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                  Text(
+                    text = if (remainingForSpendings >= 0) {
+                      String.format(Locale.getDefault(), "Remaining: %s%.2f", currency, remainingForSpendings)
+                    } else {
+                      String.format(Locale.getDefault(), "Over budget by: %s%.2f", currency, -remainingForSpendings)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (remainingForSpendings >= 0) IncomeGreen else ExpenseRed
+                  )
+                  Text(
+                    text = String.format(Locale.getDefault(), "Pace: %s%.2f / day", currency, dailySpendingAllowance),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+            }
+
+            // Explanatory note
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(GoalGold.copy(alpha = 0.1f))
+                .padding(10.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = GoalGold,
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "Savings ($currency${String.format(Locale.getDefault(), "%.0f", targetSavings)}) has no relation with spending amount. Your spending counts strictly against the rest ($currency${String.format(Locale.getDefault(), "%.0f", restCountedForSpendings)}).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 12.sp
+              )
+            }
+          }
+        }
+      }
+
+      // 3. Goal & Income Settings Form
       item {
         Card(
           shape = RoundedCornerShape(20.dp),
@@ -206,22 +532,31 @@ fun SavingsGoalScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
           ) {
             Text(
-              text = "Adjust Fixed Monthly Goal & Income",
+              text = "Adjust Savings Amount & Monthly Income",
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold
             )
 
             // Savings Goal Input
-            OutlinedTextField(
-              value = savingsGoalInput,
-              onValueChange = { savingsGoalInput = it },
-              label = { Text("Fixed Monthly Savings Goal ($currency)") },
-              placeholder = { Text("500") },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth().testTag("savings_goal_input"),
-              shape = RoundedCornerShape(14.dp)
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              OutlinedTextField(
+                value = savingsGoalInput,
+                onValueChange = { savingsGoalInput = it },
+                label = { Text("Fixed Monthly Savings Amount ($currency)") },
+                placeholder = { Text("500") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("savings_goal_input"),
+                shape = RoundedCornerShape(14.dp)
+              )
+
+              Text(
+                text = "Rest counted for spendings: $currency${String.format(Locale.getDefault(), "%.2f", restCountedForSpendings)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = IncomeGreen,
+                fontWeight = FontWeight.SemiBold
+              )
+            }
 
             // Preset chips for quick goal setting
             Row(
@@ -261,16 +596,65 @@ fun SavingsGoalScreen(
               shape = RoundedCornerShape(14.dp)
             )
 
-            // Currency Symbol
-            OutlinedTextField(
-              value = currencyInput,
-              onValueChange = { if (it.length <= 3) currencyInput = it },
-              label = { Text("Currency Symbol") },
-              placeholder = { Text("$") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth().testTag("currency_symbol_input"),
-              shape = RoundedCornerShape(14.dp)
-            )
+            // Currency Selection Section with Chinese Yuan & World Currencies
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Text(
+                text = "Currency Symbol",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+              )
+
+              // Preset currency chips featuring Chinese Yuan prominently
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                listOf(
+                  "¥" to "¥ (Chinese Yuan / CNY)",
+                  "元" to "元 (RMB)",
+                  "$" to "$ (USD)",
+                  "€" to "€ (EUR)",
+                  "£" to "£ (GBP)",
+                  "₹" to "₹ (INR)",
+                  "HK$" to "HK$ (HKD)",
+                  "NT$" to "NT$ (TWD)",
+                  "C$" to "C$ (CAD)",
+                  "A$" to "A$ (AUD)"
+                ).forEach { (symbol, label) ->
+                  val isSelected = currencyInput == symbol
+                  Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) GoalGold.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                    border = if (isSelected) BorderStroke(1.5.dp, GoalGold) else null,
+                    modifier = Modifier
+                      .clip(RoundedCornerShape(12.dp))
+                      .clickable { currencyInput = symbol }
+                      .testTag("currency_chip_${symbol.replace("$", "usd")}")
+                  ) {
+                    Text(
+                      text = label,
+                      style = MaterialTheme.typography.labelMedium,
+                      fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                      color = if (isSelected) GoalGold else MaterialTheme.colorScheme.onSurface,
+                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                  }
+                }
+              }
+
+              // Selected / Custom Currency Input
+              OutlinedTextField(
+                value = currencyInput,
+                onValueChange = { if (it.length <= 5) currencyInput = it },
+                label = { Text("Selected Currency Symbol (e.g. ¥, 元, CNY, $)") },
+                placeholder = { Text("¥") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("currency_symbol_input"),
+                shape = RoundedCornerShape(14.dp)
+              )
+            }
 
             Button(
               onClick = {
@@ -291,12 +675,12 @@ fun SavingsGoalScreen(
             ) {
               Icon(imageVector = Icons.Default.Check, contentDescription = null)
               Spacer(modifier = Modifier.width(8.dp))
-              Text("Save Financial Goal", fontWeight = FontWeight.Bold)
+              Text("Save Savings & Spending Allocation", fontWeight = FontWeight.Bold)
             }
 
             if (isSavedNoticeVisible) {
               Text(
-                text = "✓ Savings goal & income updated successfully!",
+                text = "✓ Savings set aside ($currency${String.format(Locale.getDefault(), "%.0f", targetSavings)})! Rest ($currency${String.format(Locale.getDefault(), "%.0f", restCountedForSpendings)}) is counted for spendings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = IncomeGreen,
                 fontWeight = FontWeight.SemiBold

@@ -98,6 +98,8 @@ fun AddExpenseBottomSheet(
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val context = LocalContext.current
   val dbBudgets by viewModel.categoryBudgets.collectAsStateWithLifecycle()
+  val monthlyGoal by viewModel.monthlyGoal.collectAsStateWithLifecycle()
+  val currency = monthlyGoal.currencySymbol
 
   var title by remember { mutableStateOf(editingExpense?.title ?: "") }
   var amountInput by remember {
@@ -242,7 +244,7 @@ fun AddExpenseBottomSheet(
       OutlinedTextField(
         value = amountInput,
         onValueChange = { amountInput = it },
-        label = { Text("Amount ($ / Calculator: e.g. 15+4.50)") },
+        label = { Text("Amount ($currency / Calculator: e.g. 15+4.50)") },
         placeholder = { Text("0.00") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
         singleLine = true,
@@ -253,7 +255,7 @@ fun AddExpenseBottomSheet(
         trailingIcon = {
           if (parsedAmount != null && (amountInput.contains("+") || amountInput.contains("-") || amountInput.contains("*") || amountInput.contains("/"))) {
             Text(
-              text = String.format(Locale.US, "= $%.2f", parsedAmount),
+              text = String.format(Locale.US, "= %s%.2f", currency, parsedAmount),
               style = MaterialTheme.typography.bodyMedium,
               fontWeight = FontWeight.Bold,
               color = IncomeGreen,

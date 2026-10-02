@@ -107,8 +107,8 @@ fun DailyExpenseScreen(
   val dateTitle = if (isToday) "Today" else SimpleDateFormat("EEE, MMM dd", Locale.getDefault()).format(Date(selectedDateMillis))
   val fullDateString = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault()).format(Date(selectedDateMillis))
 
-  // Recommended daily spending allowance (Total Budget / 30)
-  val dailyAllowance = (monthlyReport.totalBudgetLimit / 30.0).coerceAtLeast(1.0)
+  // Recommended daily spending allowance (Spending Budget / Days in Month)
+  val dailyAllowance = (monthlyReport.spendingBudget / monthlyReport.daysInCycle.coerceAtLeast(1).toDouble()).coerceAtLeast(1.0)
   val isOverDailyAllowance = totalSpentToday > dailyAllowance
 
   Scaffold(
@@ -232,7 +232,8 @@ fun DailyExpenseScreen(
         item {
           LimitAlertBanner(
             alerts = activeAlerts,
-            onDismiss = { catName -> viewModel.dismissAlert(catName) }
+            onDismiss = { catName -> viewModel.dismissAlert(catName) },
+            currencySymbol = currency
           )
         }
       }
@@ -305,7 +306,7 @@ fun DailyExpenseScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Text(
-                  text = "Daily Target: $currency${String.format(Locale.getDefault(), "%.0f", dailyAllowance)}/day",
+                  text = "Daily Pace: $currency${String.format(Locale.getDefault(), "%.0f", dailyAllowance)}/day ($currency${String.format(Locale.getDefault(), "%.0f", monthlyReport.spendingBudget)} budget)",
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
                 )

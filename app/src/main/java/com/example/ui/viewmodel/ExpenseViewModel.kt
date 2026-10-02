@@ -49,9 +49,14 @@ data class MonthBudgetReport(
   val totalSpent: Double,
   val monthlyIncome: Double,
   val savingsGoal: Double,
-  val netSavings: Double,
-  val savingsGoalProgress: Float, // 0.0 to 1.0+
-  val isSavingsGoalMet: Boolean,
+  val savingsAmount: Double = savingsGoal,
+  val spendingBudget: Double = (monthlyIncome - savingsGoal).coerceAtLeast(0.0),
+  val spendingRemaining: Double = spendingBudget - totalSpent,
+  val spendingUsagePercentage: Float = if (spendingBudget > 0) (totalSpent / spendingBudget).toFloat() else 0f,
+  val isOverSpendingBudget: Boolean = spendingBudget > 0 && totalSpent > spendingBudget,
+  val netSavings: Double = savingsGoal,
+  val savingsGoalProgress: Float = 1f, // 0.0 to 1.0+
+  val isSavingsGoalMet: Boolean = true,
   val categorySummaries: List<CategorySpendingSummary>,
   val dailyBreakdown: List<DaySpendingSummary>,
   val topSpendingCategory: String?,
@@ -166,14 +171,20 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val totalSpent = monthExpensesList.sumOf { it.amount }
     val income = goal.monthlyIncome
     val savingsGoal = goal.savingsGoal
-    val netSavings = income - totalSpent
+
+    // Pay-Yourself-First / Savings rule:
+    // After adding the saving amount, always count the rest of the amount for spendings.
+    // Savings amount does not have any relation with the spending amount.
+    val spendingBudget = (income - savingsGoal).coerceAtLeast(0.0)
+    val spendingRemaining = spendingBudget - totalSpent
+    val isOverSpendingBudget = spendingBudget > 0 && totalSpent > spendingBudget
+    val spendingUsage = if (spendingBudget > 0) (totalSpent / spendingBudget).toFloat() else 0f
     val currency = goal.currencySymbol
 
-    val goalProgress = if (savingsGoal > 0) {
-      ((netSavings / savingsGoal).toFloat()).coerceAtLeast(0f)
-    } else 1f
-
-    val isGoalMet = netSavings >= savingsGoal
+    // Savings amount is dedicated and protected, never reduced by spendings
+    val netSavings = savingsGoal
+    val goalProgress = 1f
+    val isGoalMet = true
 
     // Category Summaries
     val budgetMap = budgetsList.associateBy { it.categoryName }
@@ -235,7 +246,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     val topCategory = categorySummaries.firstOrNull { it.spent > 0 }?.categoryName
-    val totalBudgetLimit = budgetsList.sumOf { it.monthlyLimit }.let { if (it > 0) it else DefaultCategories.list.sumOf { c -> c.defaultLimit } }
+    // Total monthly spending limit is the rest of income after savings
+    val totalBudgetLimit = if (spendingBudget > 0) spendingBudget else budgetsList.sumOf { it.monthlyLimit }.let { if (it > 0) it else DefaultCategories.list.sumOf { c -> c.defaultLimit } }
     val remainingBudget = totalBudgetLimit - totalSpent
 
     val currentCal = Calendar.getInstance()
@@ -269,6 +281,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
       totalSpent = totalSpent,
       monthlyIncome = income,
       savingsGoal = savingsGoal,
+      savingsAmount = savingsGoal,
+      spendingBudget = spendingBudget,
+      spendingRemaining = spendingRemaining,
+      spendingUsagePercentage = spendingUsage,
+      isOverSpendingBudget = isOverSpendingBudget,
       netSavings = netSavings,
       savingsGoalProgress = goalProgress,
       isSavingsGoalMet = isGoalMet,
@@ -293,14 +310,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
       totalSpent = 0.0,
       monthlyIncome = 3000.0,
       savingsGoal = 500.0,
-      netSavings = 3000.0,
+      savingsAmount = 500.0,
+      spendingBudget = 2500.0,
+      spendingRemaining = 2500.0,
+      spendingUsagePercentage = 0f,
+      isOverSpendingBudget = false,
+      netSavings = 500.0,
       savingsGoalProgress = 1f,
       isSavingsGoalMet = true,
       categorySummaries = emptyList(),
       dailyBreakdown = emptyList(),
       topSpendingCategory = null,
-      totalBudgetLimit = 2000.0,
-      overallBudgetRemaining = 2000.0,
+      totalBudgetLimit = 2500.0,
+      overallBudgetRemaining = 2500.0,
       currencySymbol = "$",
       daysInCycle = 30,
       daysElapsed = 1,

@@ -200,13 +200,24 @@ fun CategoryBudgetScreen(
                   fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                  text = String.format(Locale.getDefault(), "Limit: %s%.2f", currency, totalBudget),
+                  text = String.format(Locale.getDefault(), "Spendings Limit: %s%.2f", currency, totalBudget),
                   style = MaterialTheme.typography.bodyMedium,
                   color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
               }
 
               BudgetProgressBar(spent = totalSpent, limit = totalBudget)
+
+              Text(
+                text = String.format(
+                  Locale.getDefault(),
+                  "Counted for spendings: %s%.2f (after %s%.0f savings)",
+                  currency, monthlyReport.spendingBudget,
+                  currency, monthlyReport.savingsGoal
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
             }
 
             // Cycle reset information pill

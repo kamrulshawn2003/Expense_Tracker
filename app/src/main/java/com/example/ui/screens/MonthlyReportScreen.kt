@@ -81,10 +81,11 @@ fun MonthlyReportScreen(
       appendLine("📊 Monthly Budget & Expense Report - ${report.monthDisplay}")
       appendLine("---------------------------------------")
       appendLine("💰 Total Income: $currency${String.format(Locale.getDefault(), "%.2f", report.monthlyIncome)}")
+      appendLine("🎯 Fixed Savings (Set Aside): $currency${String.format(Locale.getDefault(), "%.2f", report.savingsGoal)}")
+      appendLine("🛒 Counted for Spendings: $currency${String.format(Locale.getDefault(), "%.2f", report.spendingBudget)}")
       appendLine("💸 Total Spending: $currency${String.format(Locale.getDefault(), "%.2f", report.totalSpent)}")
-      appendLine("🎯 Fixed Savings Goal: $currency${String.format(Locale.getDefault(), "%.2f", report.savingsGoal)}")
-      appendLine("💵 Net Savings: $currency${String.format(Locale.getDefault(), "%.2f", report.netSavings)}")
-      appendLine("📈 Savings Goal Status: ${if (report.isSavingsGoalMet) "Goal Met! ✅" else "Below Goal ⚠️"}")
+      appendLine("💵 Remaining for Spendings: $currency${String.format(Locale.getDefault(), "%.2f", report.spendingRemaining)}")
+      appendLine("📈 Spendings Status: ${if (!report.isOverSpendingBudget) "Within Budget ✅" else "Over Budget ⚠️"}")
       appendLine("---------------------------------------")
       appendLine("Category Spending Breakdown:")
       report.categorySummaries.filter { it.spent > 0 }.forEach { cat ->
@@ -268,11 +269,33 @@ fun MonthlyReportScreen(
                 }
               }
 
-              // 2x2 Financial Metric Grid
+              // 2x2 Financial Metric Grid: Spendings Budget, Total Spent, Income, Savings
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
               ) {
+                // Counted for Spendings (Spending Budget = Income - Savings)
+                Surface(
+                  shape = RoundedCornerShape(16.dp),
+                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                      text = "Counted for Spendings",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                      text = String.format(Locale.getDefault(), "%s%.2f", currency, report.spendingBudget),
+                      style = MaterialTheme.typography.titleLarge,
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.onPrimary
+                    )
+                  }
+                }
+
                 // Total Spent
                 Surface(
                   shape = RoundedCornerShape(16.dp),
@@ -291,28 +314,6 @@ fun MonthlyReportScreen(
                       style = MaterialTheme.typography.titleLarge,
                       fontWeight = FontWeight.Bold,
                       color = MaterialTheme.colorScheme.onPrimary
-                    )
-                  }
-                }
-
-                // Net Savings
-                Surface(
-                  shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
-                  modifier = Modifier.weight(1f)
-                ) {
-                  Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                      text = "Net Saved",
-                      style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                      text = String.format(Locale.getDefault(), "%s%.2f", currency, report.netSavings),
-                      style = MaterialTheme.typography.titleLarge,
-                      fontWeight = FontWeight.Bold,
-                      color = if (report.netSavings >= 0) Color(0xFFA7F3D0) else Color(0xFFFFD1D1)
                     )
                   }
                 }
@@ -344,7 +345,7 @@ fun MonthlyReportScreen(
                   }
                 }
 
-                // Fixed Savings Goal Target
+                // Dedicated Savings Amount (Protected)
                 Surface(
                   shape = RoundedCornerShape(16.dp),
                   color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
@@ -352,7 +353,7 @@ fun MonthlyReportScreen(
                 ) {
                   Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                      text = "Savings Target",
+                      text = "Savings (Set Aside)",
                       style = MaterialTheme.typography.labelSmall,
                       color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                     )
@@ -364,6 +365,41 @@ fun MonthlyReportScreen(
                       color = GoalGold
                     )
                   }
+                }
+              }
+
+              // Spending Budget Remaining Pill
+              Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = if (!report.isOverSpendingBudget) {
+                      String.format(
+                        Locale.getDefault(),
+                        "Spendings Remaining: %s%.2f (%.0f%% used)",
+                        currency, report.spendingRemaining,
+                        report.spendingUsagePercentage * 100
+                      )
+                    } else {
+                      String.format(
+                        Locale.getDefault(),
+                        "⚠️ Over Spending Budget by %s%.2f",
+                        currency, report.totalSpent - report.spendingBudget
+                      )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (!report.isOverSpendingBudget) Color(0xFFA7F3D0) else Color(0xFFFFD1D1)
+                  )
                 }
               }
             }
@@ -407,14 +443,14 @@ fun MonthlyReportScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                   Text(
-                    text = "Fixed Savings Goal",
+                    text = "Fixed Savings Set Aside",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                   )
                   Text(
                     text = String.format(
                       Locale.getDefault(),
-                      "Target: %s%.0f / month",
+                      "%s%.0f saved • Independent from spendings",
                       currency, report.savingsGoal
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -425,26 +461,57 @@ fun MonthlyReportScreen(
 
               Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = if (report.isSavingsGoalMet) IncomeGreen.copy(alpha = 0.15f) else GoalGold.copy(alpha = 0.15f)
+                color = IncomeGreen.copy(alpha = 0.15f)
               ) {
                 Row(
                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Icon(
-                    imageVector = if (report.isSavingsGoalMet) Icons.Default.CheckCircle else Icons.Default.TrendingUp,
+                    imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
-                    tint = if (report.isSavingsGoalMet) IncomeGreen else GoalGold,
+                    tint = IncomeGreen,
                     modifier = Modifier.size(14.dp)
                   )
                   Spacer(modifier = Modifier.width(4.dp))
                   Text(
-                    text = if (report.isSavingsGoalMet) "Target Achieved!" else String.format(Locale.getDefault(), "%.0f%% Achieved", (report.netSavings / report.savingsGoal * 100).coerceAtLeast(0.0)),
+                    text = "Preserved",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (report.isSavingsGoalMet) IncomeGreen else GoalGold
+                    color = IncomeGreen
                   )
                 }
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(
+                  text = "Counted for Spendings:",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                  text = String.format(
+                    Locale.getDefault(),
+                    "%s%.2f spent of %s%.2f budget",
+                    currency, report.totalSpent,
+                    currency, report.spendingBudget
+                  ),
+                  style = MaterialTheme.typography.bodySmall,
+                  fontWeight = FontWeight.Bold,
+                  color = if (report.isOverSpendingBudget) ExpenseRed else MaterialTheme.colorScheme.onSurface
+                )
               }
             }
           }
