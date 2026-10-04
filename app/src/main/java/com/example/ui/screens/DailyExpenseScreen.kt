@@ -50,8 +50,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.PieChart
 import com.example.data.model.DefaultCategories
 import com.example.data.model.ExpenseEntity
+import com.example.ui.components.CategoryExpensePieChart
 import com.example.ui.components.CategoryIconBadge
 import com.example.ui.components.LimitAlertBanner
 import com.example.ui.theme.ExpenseRed
@@ -477,6 +479,90 @@ fun DailyExpenseScreen(
                   maxLines = 1
                 )
               }
+            }
+          }
+        }
+
+        // 6. Monthly Expense Pie Chart Breakdown Card (Where Your Money Is Going This Month)
+        item {
+          Card(
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("daily_screen_monthly_pie_chart_card")
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+              verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(38.dp)
+                      .clip(CircleShape)
+                      .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.PieChart,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.size(20.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column {
+                    Text(
+                      text = "Where Your Money Is Going",
+                      style = MaterialTheme.typography.titleMedium,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                      text = "${monthlyReport.monthDisplay} • Category Breakdown",
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                  }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Surface(
+                  shape = RoundedCornerShape(10.dp),
+                  color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                ) {
+                  Text(
+                    text = String.format(Locale.getDefault(), "%s%.2f", currency, monthlyReport.totalSpent),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                  )
+                }
+              }
+
+              CategoryExpensePieChart(
+                categories = monthlyReport.categorySummaries,
+                totalSpent = monthlyReport.totalSpent,
+                currencySymbol = currency,
+                showAllCategoriesInList = true
+              )
             }
           }
         }

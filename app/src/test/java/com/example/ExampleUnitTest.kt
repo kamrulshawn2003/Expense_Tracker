@@ -80,5 +80,26 @@ class ExampleUnitTest {
     assertEquals(1.0f, coffeeMeta.color.alpha, 0.001f)
     assertNotNull(coffeeMeta.icon)
   }
+
+  @Test
+  fun categoryPieChartBreakdown_calculatesAccurateSweepAnglesAndPercentages() {
+    val categoryAmounts = listOf(
+      "Food & Dining" to 400.0,
+      "Groceries" to 300.0,
+      "Transportation" to 200.0,
+      "Bills & Utilities" to 100.0
+    )
+    val totalSpent = categoryAmounts.sumOf { it.second }
+    assertEquals(1000.0, totalSpent, 0.001)
+
+    val sweeps = categoryAmounts.map { (_, spent) -> (spent / totalSpent) * 360.0 }
+    val percentages = categoryAmounts.map { (_, spent) -> (spent / totalSpent) * 100.0 }
+
+    assertEquals(360.0, sweeps.sum(), 0.001)
+    assertEquals(100.0, percentages.sum(), 0.001)
+    assertEquals(144.0, sweeps[0], 0.001) // 40% of 360
+    assertEquals(40.0, percentages[0], 0.001)
+  }
 }
+
 

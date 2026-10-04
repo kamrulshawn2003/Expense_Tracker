@@ -458,25 +458,34 @@ fun MonthlyReportScreen(
         }
       }
 
-      // 4. Donut Chart - Category Breakdown
+      // 4. Pie Chart - Visual Breakdown of Expenses by Category
       item {
         Card(
-          shape = RoundedCornerShape(20.dp),
+          shape = RoundedCornerShape(22.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-          modifier = Modifier.fillMaxWidth()
+          elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("report_screen_pie_chart_card")
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(16.dp),
+              .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
           ) {
-            Text(
-              text = "Spending by Category",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text(
+                text = "Where Your Money Is Going",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+              )
+              Text(
+                text = "Tap any slice or category to inspect its share of ${report.monthDisplay} expenses",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
 
             SpendingDonutChart(
               categories = report.categorySummaries,
