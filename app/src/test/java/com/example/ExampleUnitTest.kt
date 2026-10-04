@@ -55,4 +55,30 @@ class ExampleUnitTest {
       assertTrue(formatted.contains("1588.50"))
     }
   }
+
+  @Test
+  fun itemLogoAndCategoryColor_isAlwaysOpaqueAndMatchesKeywords() {
+    val defaultCategory = com.example.data.model.DefaultCategories.list.first()
+    val encodedHex = com.example.data.model.DefaultCategories.colorToHexLong(defaultCategory.color)
+    val decodedColor = com.example.data.model.DefaultCategories.hexLongToColor(encodedHex)
+
+    assertEquals(1.0f, decodedColor.alpha, 0.001f)
+    assertEquals(defaultCategory.color.red, decodedColor.red, 0.01f)
+    assertEquals(defaultCategory.color.green, decodedColor.green, 0.01f)
+    assertEquals(defaultCategory.color.blue, decodedColor.blue, 0.01f)
+
+    // Verify legacy shifted 64-bit Color.value.toLong() is also recovered with full opacity
+    val legacyCorruptedLong = defaultCategory.color.value.toLong()
+    val recoveredLegacyColor = com.example.data.model.DefaultCategories.hexLongToColor(legacyCorruptedLong)
+    assertEquals(1.0f, recoveredLegacyColor.alpha, 0.001f)
+
+    // Verify smart item logo resolution
+    val coffeeMeta = com.example.data.model.DefaultCategories.getMetaForExpense(
+      title = "Morning Coffee",
+      category = "Food & Dining"
+    )
+    assertEquals(1.0f, coffeeMeta.color.alpha, 0.001f)
+    assertNotNull(coffeeMeta.icon)
+  }
 }
+

@@ -9,10 +9,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,11 +54,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.data.model.CategoryMeta
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.GoalGold
@@ -64,11 +64,8 @@ import com.example.ui.theme.IncomeGreen
 import com.example.ui.viewmodel.CategorySpendingSummary
 import com.example.ui.viewmodel.DaySpendingSummary
 import java.util.Locale
-import kotlin.math.PI
 import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 @Composable
 fun CategoryIconBadge(
@@ -77,17 +74,19 @@ fun CategoryIconBadge(
   size: Dp = 44.dp,
   iconSize: Dp = 22.dp
 ) {
+  val safeColor = if (meta.color.alpha < 0.2f) Color(0xFF10B981) else meta.color.copy(alpha = 1f)
   Box(
     modifier = modifier
       .size(size)
       .clip(RoundedCornerShape(12.dp))
-      .background(meta.color.copy(alpha = 0.15f)),
+      .background(safeColor.copy(alpha = 0.16f))
+      .border(1.dp, safeColor.copy(alpha = 0.32f), RoundedCornerShape(12.dp)),
     contentAlignment = Alignment.Center
   ) {
     Icon(
       imageVector = meta.icon,
       contentDescription = meta.name,
-      tint = meta.color,
+      tint = safeColor,
       modifier = Modifier.size(iconSize)
     )
   }
@@ -243,7 +242,7 @@ fun SpendingDonutChart(
   if (activeCategories.isEmpty() || totalSpent <= 0) {
     Box(
       modifier = modifier
-        .height(200.dp)
+        .height(160.dp)
         .fillMaxWidth(),
       contentAlignment = Alignment.Center
     ) {
@@ -269,141 +268,168 @@ fun SpendingDonutChart(
     }
   }
 
-  Row(
-    modifier = modifier.fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    // Canvas Donut
-    Box(
-      modifier = Modifier
-        .size(180.dp)
-        .padding(8.dp),
-      contentAlignment = Alignment.Center
-    ) {
-      Canvas(
+  BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+    val isCompactWidth = maxWidth < 330.dp
+    val chartSize = if (isCompactWidth) 150.dp else (maxWidth * 0.44f).coerceIn(140.dp, 180.dp)
+
+    @Composable
+    fun DonutCanvasBox() {
+      Box(
         modifier = Modifier
-          .fillMaxSize()
-          .pointerInput(Unit) {
-            detectTapGestures { offset ->
-              val center = Offset(size.width / 2f, size.height / 2f)
-              val dx = offset.x - center.x
-              val dy = offset.y - center.y
-              var touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-              if (touchAngle < 0) touchAngle += 360f
+          .size(chartSize)
+          .padding(6.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        Canvas(
+          modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+              detectTapGestures { offset ->
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val dx = offset.x - center.x
+                val dy = offset.y - center.y
+                var touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                if (touchAngle < 0) touchAngle += 360f
 
-              val clickedIdx = angles.indexOfFirst { (start, sweep) ->
-                touchAngle >= start && touchAngle < (start + sweep)
+                val clickedIdx = angles.indexOfFirst { (start, sweep) ->
+                  touchAngle >= start && touchAngle < (start + sweep)
+                }
+                selectedCategoryIndex = if (clickedIdx != -1) clickedIdx else null
               }
-              selectedCategoryIndex = if (clickedIdx != -1) clickedIdx else null
             }
+        ) {
+          val strokeWidth = 26.dp.toPx()
+          val diameter = min(size.width, size.height) - strokeWidth
+          val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
+          val arcSize = Size(diameter, diameter)
+
+          angles.forEachIndexed { index, (startAngle, sweepAngle) ->
+            val cat = activeCategories[index]
+            val isSelected = selectedCategoryIndex == index
+            val currentStroke = if (isSelected) strokeWidth + 5.dp.toPx() else strokeWidth
+            val safeColor = if (cat.meta.color.alpha < 0.2f) Color(0xFF10B981) else cat.meta.color.copy(alpha = 1f)
+
+            drawArc(
+              color = safeColor,
+              startAngle = startAngle - 90f,
+              sweepAngle = (sweepAngle - 2f).coerceAtLeast(1f),
+              useCenter = false,
+              topLeft = topLeft,
+              size = arcSize,
+              style = Stroke(width = currentStroke, cap = StrokeCap.Round)
+            )
           }
-      ) {
-        val strokeWidth = 32.dp.toPx()
-        val diameter = min(size.width, size.height) - strokeWidth
-        val topLeft = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
-        val arcSize = Size(diameter, diameter)
-
-        angles.forEachIndexed { index, (startAngle, sweepAngle) ->
-          val cat = activeCategories[index]
-          val isSelected = selectedCategoryIndex == index
-          val currentStroke = if (isSelected) strokeWidth + 6.dp.toPx() else strokeWidth
-
-          drawArc(
-            color = cat.meta.color,
-            startAngle = startAngle - 90f,
-            sweepAngle = (sweepAngle - 2f).coerceAtLeast(1f),
-            useCenter = false,
-            topLeft = topLeft,
-            size = arcSize,
-            style = Stroke(width = currentStroke, cap = StrokeCap.Round)
-          )
         }
-      }
 
-      // Center summary
-      Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(12.dp)
-      ) {
-        val displayCategory = selectedCategoryIndex?.let { activeCategories.getOrNull(it) }
-        if (displayCategory != null) {
-          Text(
-            text = displayCategory.categoryName,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = displayCategory.meta.color,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-          )
-          Text(
-            text = String.format(Locale.getDefault(), "%s%.1f", currencySymbol, displayCategory.spent),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-          )
-          Text(
-            text = String.format(Locale.getDefault(), "%.0f%%", displayCategory.percentageOfTotal),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-        } else {
-          Text(
-            text = "Total Spent",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-          Text(
-            text = String.format(Locale.getDefault(), "%s%.2f", currencySymbol, totalSpent),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-          )
+        // Center summary
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          modifier = Modifier.padding(10.dp)
+        ) {
+          val displayCategory = selectedCategoryIndex?.let { activeCategories.getOrNull(it) }
+          if (displayCategory != null) {
+            Text(
+              text = displayCategory.categoryName,
+              style = MaterialTheme.typography.labelSmall,
+              fontWeight = FontWeight.Medium,
+              color = displayCategory.meta.color.copy(alpha = 1f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            Text(
+              text = String.format(Locale.getDefault(), "%s%.1f", currencySymbol, displayCategory.spent),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1
+            )
+            Text(
+              text = String.format(Locale.getDefault(), "%.0f%%", displayCategory.percentageOfTotal),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          } else {
+            Text(
+              text = "Total Spent",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+              text = String.format(Locale.getDefault(), "%s%.0f", currencySymbol, totalSpent),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1
+            )
+          }
         }
       }
     }
 
-    Spacer(modifier = Modifier.width(12.dp))
-
-    // Legend items (Top 4)
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-      activeCategories.take(4).forEachIndexed { index, cat ->
-        val isSelected = selectedCategoryIndex == index
-        Surface(
-          shape = RoundedCornerShape(8.dp),
-          color = if (isSelected) cat.meta.color.copy(alpha = 0.15f) else Color.Transparent,
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-              selectedCategoryIndex = if (selectedCategoryIndex == index) null else index
-            }
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+    @Composable
+    fun LegendList(modifier: Modifier = Modifier) {
+      Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        activeCategories.take(5).forEachIndexed { index, cat ->
+          val isSelected = selectedCategoryIndex == index
+          val safeColor = if (cat.meta.color.alpha < 0.2f) Color(0xFF10B981) else cat.meta.color.copy(alpha = 1f)
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (isSelected) safeColor.copy(alpha = 0.15f) else Color.Transparent,
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable {
+                selectedCategoryIndex = if (selectedCategoryIndex == index) null else index
+              }
           ) {
-            Box(
-              modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(cat.meta.color)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = cat.categoryName,
-              style = MaterialTheme.typography.bodySmall,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.weight(1f)
-            )
-            Text(
-              text = String.format(Locale.getDefault(), "%.0f%%", cat.percentageOfTotal),
-              style = MaterialTheme.typography.labelSmall,
-              fontWeight = FontWeight.SemiBold,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+              modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = cat.meta.icon,
+                contentDescription = null,
+                tint = safeColor,
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = cat.categoryName,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                text = String.format(Locale.getDefault(), "%.0f%%", cat.percentageOfTotal),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
           }
         }
+      }
+    }
+
+    if (isCompactWidth) {
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+      ) {
+        DonutCanvasBox()
+        LegendList(modifier = Modifier.fillMaxWidth())
+      }
+    } else {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        DonutCanvasBox()
+        Spacer(modifier = Modifier.width(12.dp))
+        LegendList(modifier = Modifier.weight(1f))
       }
     }
   }
@@ -437,7 +463,7 @@ fun DailySpendingBarChart(
         if (count == 0) return@Canvas
 
         val barSlotWidth = width / count
-        val barWidth = (barSlotWidth * 0.65f).coerceIn(4.dp.toPx(), 14.dp.toPx())
+        val barWidth = (barSlotWidth * 0.65f).coerceIn(3.dp.toPx(), 14.dp.toPx())
 
         // Average line
         val total = dailyBreakdown.sumOf { it.amount }
@@ -461,7 +487,6 @@ fun DailySpendingBarChart(
             Color.LightGray.copy(alpha = 0.25f)
           }
 
-          // Draw bar
           drawRoundRect(
             color = barColor,
             topLeft = Offset(x, if (day.amount > 0) y else height - 4.dp.toPx()),
@@ -484,3 +509,4 @@ fun DailySpendingBarChart(
     }
   }
 }
+

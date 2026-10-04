@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -22,30 +24,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.TrendingDown
-import androidx.compose.material.icons.filled.TrendingUp
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,8 +43,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.CategoryIconBadge
 import com.example.ui.components.DailySpendingBarChart
@@ -74,7 +63,6 @@ fun MonthlyReportScreen(
   val context = LocalContext.current
   val report by viewModel.monthlyReport.collectAsStateWithLifecycle()
   val currency = report.currencySymbol
-  var showResetConfirmDialog by remember { mutableStateOf(false) }
 
   fun shareReport() {
     val reportText = buildString {
@@ -82,15 +70,21 @@ fun MonthlyReportScreen(
       appendLine("---------------------------------------")
       appendLine("💰 Total Income: $currency${String.format(Locale.getDefault(), "%.2f", report.monthlyIncome)}")
       appendLine("🎯 Fixed Savings (Set Aside): $currency${String.format(Locale.getDefault(), "%.2f", report.savingsGoal)}")
-      appendLine("🛒 Counted for Spendings: $currency${String.format(Locale.getDefault(), "%.2f", report.spendingBudget)}")
+      appendLine("🛒 Spendable Budget: $currency${String.format(Locale.getDefault(), "%.2f", report.spendingBudget)}")
       appendLine("💸 Total Spending: $currency${String.format(Locale.getDefault(), "%.2f", report.totalSpent)}")
       appendLine("💵 Remaining for Spendings: $currency${String.format(Locale.getDefault(), "%.2f", report.spendingRemaining)}")
-      appendLine("📈 Spendings Status: ${if (!report.isOverSpendingBudget) "Within Budget ✅" else "Over Budget ⚠️"}")
+      appendLine("📈 Status: ${if (!report.isOverSpendingBudget) "Within Budget ✅" else "Over Budget ⚠️"}")
       appendLine("---------------------------------------")
       appendLine("Category Spending Breakdown:")
       report.categorySummaries.filter { it.spent > 0 }.forEach { cat ->
         val status = if (cat.isExceeded) " [⚠️ EXCEEDED BY $currency${String.format(Locale.getDefault(), "%.2f", cat.spent - cat.limit)}]" else ""
-        appendLine(" • ${cat.categoryName}: $currency${String.format(Locale.getDefault(), "%.2f", cat.spent)} / limit $currency${String.format(Locale.getDefault(), "%.2f", cat.limit)} (%.0f%%)%s".format(Locale.getDefault(), cat.percentageOfTotal, status))
+        appendLine(
+          " • ${cat.categoryName}: $currency${String.format(Locale.getDefault(), "%.2f", cat.spent)} / limit $currency${String.format(Locale.getDefault(), "%.2f", cat.limit)} (%.0f%%)%s".format(
+            Locale.getDefault(),
+            cat.percentageOfTotal,
+            status
+          )
+        )
       }
       appendLine("---------------------------------------")
       appendLine("Generated by Expense Tracker")
@@ -104,22 +98,34 @@ fun MonthlyReportScreen(
     context.startActivity(Intent.createChooser(intent, "Share Budget Report"))
   }
 
-  Column(
+  BoxWithConstraints(
     modifier = modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
+      .background(MaterialTheme.colorScheme.background),
+    contentAlignment = Alignment.TopCenter
   ) {
+    val isCompact = maxWidth < 360.dp
+    val horizontalPad = if (isCompact) 12.dp else 16.dp
+
     LazyColumn(
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      modifier = Modifier
+        .widthIn(max = 720.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(
+        start = horizontalPad,
+        end = horizontalPad,
+        top = 12.dp,
+        bottom = 88.dp
+      ),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // 1. Month Switcher
       item {
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Row(
             modifier = Modifier
@@ -142,7 +148,7 @@ fun MonthlyReportScreen(
                 fontWeight = FontWeight.Bold
               )
               Text(
-                text = if (report.isCurrentCycle) "Active 1-Month Cycle" else "Archived Cycle",
+                text = if (report.isCurrentCycle) "Current Month" else "Past Month",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (report.isCurrentCycle) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold
@@ -154,66 +160,6 @@ fun MonthlyReportScreen(
               modifier = Modifier.testTag("next_month_button")
             ) {
               Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
-            }
-          }
-        }
-      }
-
-      // 1-Month Cycle Status Pill Card
-      item {
-        Card(
-          shape = RoundedCornerShape(16.dp),
-          colors = CardDefaults.cardColors(
-            containerColor = if (report.isCurrentCycle) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-          )
-        ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-          ) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              modifier = Modifier.weight(1f)
-            ) {
-              Icon(
-                imageVector = Icons.Default.Autorenew,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-              )
-              Spacer(modifier = Modifier.width(10.dp))
-              Column {
-                Text(
-                  text = if (report.isCurrentCycle) "1-Month Count Cycle (Day ${report.daysElapsed} of ${report.daysInCycle})"
-                  else "Completed Cycle (${report.daysInCycle} days)",
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                  text = if (report.isCurrentCycle) "After this month ends, cycle restarts fresh from $0 on ${report.nextCycleResetDate}."
-                  else "Calculated for 1-month period. Next month restarted from $0.00.",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
-            }
-
-            if (report.isCurrentCycle && report.totalSpent > 0) {
-              Spacer(modifier = Modifier.width(8.dp))
-              OutlinedButton(
-                onClick = { showResetConfirmDialog = true },
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                modifier = Modifier.testTag("reset_cycle_button")
-              ) {
-                Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Reset $0", style = MaterialTheme.typography.labelSmall)
-              }
             }
           }
         }
@@ -237,9 +183,9 @@ fun MonthlyReportScreen(
                   )
                 )
               )
-              .padding(20.dp)
+              .padding(if (isCompact) 16.dp else 20.dp)
           ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -249,7 +195,10 @@ fun MonthlyReportScreen(
                   text = "Monthly Financial Snapshot",
                   style = MaterialTheme.typography.titleMedium,
                   color = MaterialTheme.colorScheme.onPrimary,
-                  fontWeight = FontWeight.Bold
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                  modifier = Modifier.weight(1f)
                 )
 
                 IconButton(
@@ -269,51 +218,57 @@ fun MonthlyReportScreen(
                 }
               }
 
-              // 2x2 Financial Metric Grid: Spendings Budget, Total Spent, Income, Savings
+              // 2x2 Financial Metric Grid
               Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
-                // Counted for Spendings (Spending Budget = Income - Savings)
                 Surface(
                   shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
+                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f),
                   modifier = Modifier.weight(1f)
                 ) {
                   Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                      text = "Counted for Spendings",
+                      text = "Spendable Budget",
                       style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                       text = String.format(Locale.getDefault(), "%s%.2f", currency, report.spendingBudget),
-                      style = MaterialTheme.typography.titleLarge,
+                      style = if (isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                       fontWeight = FontWeight.Bold,
-                      color = MaterialTheme.colorScheme.onPrimary
+                      color = MaterialTheme.colorScheme.onPrimary,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                   }
                 }
 
-                // Total Spent
                 Surface(
                   shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
+                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f),
                   modifier = Modifier.weight(1f)
                 ) {
                   Column(modifier = Modifier.padding(12.dp)) {
                     Text(
                       text = "Total Spent",
                       style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                       text = String.format(Locale.getDefault(), "%s%.2f", currency, report.totalSpent),
-                      style = MaterialTheme.typography.titleLarge,
+                      style = if (isCompact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                       fontWeight = FontWeight.Bold,
-                      color = MaterialTheme.colorScheme.onPrimary
+                      color = MaterialTheme.colorScheme.onPrimary,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                   }
                 }
@@ -321,48 +276,54 @@ fun MonthlyReportScreen(
 
               Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
               ) {
-                // Monthly Income
                 Surface(
                   shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
+                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f),
                   modifier = Modifier.weight(1f)
                 ) {
                   Column(modifier = Modifier.padding(12.dp)) {
                     Text(
                       text = "Monthly Income",
                       style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                       text = String.format(Locale.getDefault(), "%s%.2f", currency, report.monthlyIncome),
                       style = MaterialTheme.typography.titleMedium,
                       fontWeight = FontWeight.Bold,
-                      color = MaterialTheme.colorScheme.onPrimary
+                      color = MaterialTheme.colorScheme.onPrimary,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                   }
                 }
 
-                // Dedicated Savings Amount (Protected)
                 Surface(
                   shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f),
+                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f),
                   modifier = Modifier.weight(1f)
                 ) {
                   Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                      text = "Savings (Set Aside)",
+                      text = "Savings Set Aside",
                       style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                       text = String.format(Locale.getDefault(), "%s%.2f", currency, report.savingsGoal),
                       style = MaterialTheme.typography.titleMedium,
                       fontWeight = FontWeight.Bold,
-                      color = GoalGold
+                      color = GoalGold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
                     )
                   }
                 }
@@ -385,14 +346,14 @@ fun MonthlyReportScreen(
                     text = if (!report.isOverSpendingBudget) {
                       String.format(
                         Locale.getDefault(),
-                        "Spendings Remaining: %s%.2f (%.0f%% used)",
+                        "Remaining: %s%.2f (%.0f%% used)",
                         currency, report.spendingRemaining,
                         report.spendingUsagePercentage * 100
                       )
                     } else {
                       String.format(
                         Locale.getDefault(),
-                        "⚠️ Over Spending Budget by %s%.2f",
+                        "⚠️ Over Budget by %s%.2f",
                         currency, report.totalSpent - report.spendingBudget
                       )
                     },
@@ -412,7 +373,8 @@ fun MonthlyReportScreen(
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Column(
             modifier = Modifier
@@ -425,10 +387,13 @@ fun MonthlyReportScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+              ) {
                 Box(
                   modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
                     .background(GoalGold.copy(alpha = 0.15f)),
                   contentAlignment = Alignment.Center
@@ -443,21 +408,27 @@ fun MonthlyReportScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                   Text(
-                    text = "Fixed Savings Set Aside",
+                    text = "Protected Monthly Savings",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                   Text(
                     text = String.format(
                       Locale.getDefault(),
-                      "%s%.0f saved • Independent from spendings",
+                      "%s%.0f saved • Separate from spendings",
                       currency, report.savingsGoal
                     ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
+
+              Spacer(modifier = Modifier.width(8.dp))
 
               Surface(
                 shape = RoundedCornerShape(10.dp),
@@ -475,43 +446,12 @@ fun MonthlyReportScreen(
                   )
                   Spacer(modifier = Modifier.width(4.dp))
                   Text(
-                    text = "Preserved",
+                    text = "Saved",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = IncomeGreen
                   )
                 }
-              }
-            }
-
-            Surface(
-              shape = RoundedCornerShape(12.dp),
-              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = "Counted for Spendings:",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                  text = String.format(
-                    Locale.getDefault(),
-                    "%s%.2f spent of %s%.2f budget",
-                    currency, report.totalSpent,
-                    currency, report.spendingBudget
-                  ),
-                  style = MaterialTheme.typography.bodySmall,
-                  fontWeight = FontWeight.Bold,
-                  color = if (report.isOverSpendingBudget) ExpenseRed else MaterialTheme.colorScheme.onSurface
-                )
               }
             }
           }
@@ -523,7 +463,8 @@ fun MonthlyReportScreen(
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Column(
             modifier = Modifier
@@ -551,7 +492,8 @@ fun MonthlyReportScreen(
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Column(
             modifier = Modifier
@@ -587,7 +529,7 @@ fun MonthlyReportScreen(
               .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
-            CategoryIconBadge(meta = cat.meta)
+            CategoryIconBadge(meta = cat.meta, size = 44.dp, iconSize = 22.dp)
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -595,18 +537,25 @@ fun MonthlyReportScreen(
               Text(
                 text = cat.categoryName,
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
               )
               Text(
                 text = String.format(
                   Locale.getDefault(),
                   "Spent %s%.2f / Limit %s%.2f (%.0f%%)",
-                  currency, cat.spent, currency, cat.limit, (cat.spent / cat.limit * 100).coerceAtLeast(0.0)
+                  currency, cat.spent, currency, cat.limit,
+                  if (cat.limit > 0) (cat.spent / cat.limit * 100).coerceAtLeast(0.0) else 0.0
                 ),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
               )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             if (cat.isExceeded) {
               Surface(
@@ -632,38 +581,6 @@ fun MonthlyReportScreen(
         }
       }
     }
-
-    if (showResetConfirmDialog) {
-      AlertDialog(
-        onDismissRequest = { showResetConfirmDialog = false },
-        icon = {
-          Icon(
-            imageVector = Icons.Default.RestartAlt,
-            contentDescription = null,
-            tint = ExpenseRed
-          )
-        },
-        title = { Text("Reset Month Cycle to $0?") },
-        text = {
-          Text("This will clear all logged expenses for ${report.monthDisplay} and restart your monthly count cycle back to $0.00.")
-        },
-        confirmButton = {
-          Button(
-            onClick = {
-              viewModel.resetCurrentMonthCycle()
-              showResetConfirmDialog = false
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed)
-          ) {
-            Text("Reset to $0")
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = { showResetConfirmDialog = false }) {
-            Text("Cancel")
-          }
-        }
-      )
-    }
   }
 }
+

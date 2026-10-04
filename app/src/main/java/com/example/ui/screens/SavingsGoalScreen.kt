@@ -1,20 +1,15 @@
 package com.example.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,38 +17,28 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoGraph
-import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DataArray
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Savings
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.TrendingDown
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,13 +49,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.GoalGold
@@ -83,7 +68,6 @@ fun SavingsGoalScreen(
   viewModel: ExpenseViewModel,
   modifier: Modifier = Modifier
 ) {
-  val context = LocalContext.current
   val monthlyGoal by viewModel.monthlyGoal.collectAsStateWithLifecycle()
   val monthlyReport by viewModel.monthlyReport.collectAsStateWithLifecycle()
   val currency = monthlyGoal.currencySymbol
@@ -98,27 +82,7 @@ fun SavingsGoalScreen(
     mutableStateOf(monthlyGoal.currencySymbol)
   }
 
-  var hasNotificationPermission by remember {
-    mutableStateOf(
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(
-          context,
-          Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
-      } else {
-        true
-      }
-    )
-  }
-
-  val permissionLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.RequestPermission()
-  ) { isGranted ->
-    hasNotificationPermission = isGranted
-  }
-
   var isSavedNoticeVisible by remember { mutableStateOf(false) }
-  var showResetCycleDialog by remember { mutableStateOf(false) }
 
   val targetSavings = (savingsGoalInput.toDoubleOrNull() ?: monthlyGoal.savingsGoal).coerceAtLeast(0.0)
   val currentIncome = (incomeInput.toDoubleOrNull() ?: monthlyGoal.monthlyIncome).coerceAtLeast(0.0)
@@ -132,15 +96,26 @@ fun SavingsGoalScreen(
   val sixMonthProjection = targetSavings * 6
   val oneYearProjection = targetSavings * 12
 
-  Column(
+  BoxWithConstraints(
     modifier = modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
+      .background(MaterialTheme.colorScheme.background),
+    contentAlignment = Alignment.TopCenter
   ) {
+    val isCompact = maxWidth < 360.dp
+    val horizontalPad = if (isCompact) 12.dp else 16.dp
+
     LazyColumn(
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      modifier = Modifier
+        .widthIn(max = 720.dp)
+        .fillMaxSize(),
+      contentPadding = PaddingValues(
+        start = horizontalPad,
+        end = horizontalPad,
+        top = 12.dp,
+        bottom = 88.dp
+      ),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // 1. Hero Goal Banner
       item {
@@ -160,7 +135,7 @@ fun SavingsGoalScreen(
                   )
                 )
               )
-              .padding(22.dp)
+              .padding(if (isCompact) 16.dp else 20.dp)
           ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
               Row(
@@ -168,12 +143,17 @@ fun SavingsGoalScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.weight(1f)
+                ) {
                   Text(
-                    text = "Monthly Savings Amount",
+                    text = "Monthly Savings",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                   Spacer(modifier = Modifier.width(6.dp))
                   Surface(
@@ -212,19 +192,20 @@ fun SavingsGoalScreen(
                     imageVector = Icons.Default.Savings,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                   )
                 }
               }
 
               Text(
                 text = String.format(Locale.getDefault(), "%s%.2f / month", currency, targetSavings),
-                style = MaterialTheme.typography.headlineMedium,
+                style = if (isCompact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color.White
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
               )
 
-              // Rest counted for spendings banner inside hero
               Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = Color.White.copy(alpha = 0.2f),
@@ -238,11 +219,15 @@ fun SavingsGoalScreen(
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text(
-                    text = "Rest Counted for Spendings:",
+                    text = "Spendable Balance:",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.95f),
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
+                  Spacer(modifier = Modifier.width(8.dp))
                   Text(
                     text = String.format(Locale.getDefault(), "%s%.2f", currency, restCountedForSpendings),
                     style = MaterialTheme.typography.titleSmall,
@@ -253,7 +238,7 @@ fun SavingsGoalScreen(
               }
 
               Text(
-                text = "Savings amount has no relation with spending amount. When you add savings, the remaining amount is counted for spendings.",
+                text = "Your fixed monthly savings is kept separate from your spendable income.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.9f)
               )
@@ -267,12 +252,13 @@ fun SavingsGoalScreen(
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(18.dp),
+              .padding(if (isCompact) 14.dp else 18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
           ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -291,11 +277,13 @@ fun SavingsGoalScreen(
                 )
               }
               Spacer(modifier = Modifier.width(10.dp))
-              Column {
+              Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = "Income & Spendings Allocation",
                   style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
                 )
                 Text(
                   text = "Rest of income counted for spendings after savings",
@@ -305,12 +293,10 @@ fun SavingsGoalScreen(
               }
             }
 
-            // 3-Metric Equation Grid: Income - Savings = Spendings
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(8.dp)
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-              // Income
               Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -320,18 +306,21 @@ fun SavingsGoalScreen(
                   Text(
                     text = "Income",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
                     text = String.format(Locale.getDefault(), "%s%.0f", currency, currentIncome),
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
 
-              // (-) Savings
               Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = GoalGold.copy(alpha = 0.12f),
@@ -342,43 +331,49 @@ fun SavingsGoalScreen(
                     text = "(-) Savings",
                     style = MaterialTheme.typography.labelSmall,
                     color = GoalGold,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
                     text = String.format(Locale.getDefault(), "%s%.0f", currency, targetSavings),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = GoalGold
+                    color = GoalGold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
 
-              // (=) Spendings Budget
               Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = IncomeGreen.copy(alpha = 0.15f),
-                modifier = Modifier.weight(1.15f)
+                modifier = Modifier.weight(1.1f)
               ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                   Text(
                     text = "(=) Spendings",
                     style = MaterialTheme.typography.labelSmall,
                     color = IncomeGreen,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
                     text = String.format(Locale.getDefault(), "%s%.0f", currency, restCountedForSpendings),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = IncomeGreen
+                    color = IncomeGreen,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
             }
 
-            // Visual income allocation distribution
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -398,7 +393,6 @@ fun SavingsGoalScreen(
                 )
               }
 
-              // Multi-segment visual bar
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
@@ -424,7 +418,6 @@ fun SavingsGoalScreen(
               }
             }
 
-            // Current Month Spendings Tracker against Counted Spendings Budget
             Surface(
               shape = RoundedCornerShape(14.dp),
               color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -442,10 +435,14 @@ fun SavingsGoalScreen(
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text(
-                    text = "Spendings in Active Month:",
+                    text = "Spent This Month:",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
+                  Spacer(modifier = Modifier.width(6.dp))
                   Text(
                     text = String.format(
                       Locale.getDefault(),
@@ -476,14 +473,14 @@ fun SavingsGoalScreen(
                     text = if (remainingForSpendings >= 0) {
                       String.format(Locale.getDefault(), "Remaining: %s%.2f", currency, remainingForSpendings)
                     } else {
-                      String.format(Locale.getDefault(), "Over budget by: %s%.2f", currency, -remainingForSpendings)
+                      String.format(Locale.getDefault(), "Over by: %s%.2f", currency, -remainingForSpendings)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = if (remainingForSpendings >= 0) IncomeGreen else ExpenseRed
                   )
                   Text(
-                    text = String.format(Locale.getDefault(), "Pace: %s%.2f / day", currency, dailySpendingAllowance),
+                    text = String.format(Locale.getDefault(), "Daily pace: %s%.2f", currency, dailySpendingAllowance),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                   )
@@ -491,7 +488,6 @@ fun SavingsGoalScreen(
               }
             }
 
-            // Explanatory note
             Row(
               modifier = Modifier
                 .fillMaxWidth()
@@ -508,7 +504,7 @@ fun SavingsGoalScreen(
               )
               Spacer(modifier = Modifier.width(8.dp))
               Text(
-                text = "Savings ($currency${String.format(Locale.getDefault(), "%.0f", targetSavings)}) has no relation with spending amount. Your spending counts strictly against the rest ($currency${String.format(Locale.getDefault(), "%.0f", restCountedForSpendings)}).",
+                text = "Savings ($currency${String.format(Locale.getDefault(), "%.0f", targetSavings)}) is protected. Daily expenses count against the remaining $currency${String.format(Locale.getDefault(), "%.0f", restCountedForSpendings)}.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 12.sp
@@ -523,42 +519,41 @@ fun SavingsGoalScreen(
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(20.dp),
+              .padding(if (isCompact) 16.dp else 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
           ) {
             Text(
-              text = "Adjust Savings Amount & Monthly Income",
+              text = "Savings, Income & Currency Settings",
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold
             )
 
-            // Savings Goal Input
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
               OutlinedTextField(
                 value = savingsGoalInput,
                 onValueChange = { savingsGoalInput = it },
-                label = { Text("Fixed Monthly Savings Amount ($currency)") },
+                label = { Text("Monthly Savings ($currency)") },
                 placeholder = { Text("500") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("savings_goal_input"),
                 shape = RoundedCornerShape(14.dp)
               )
 
               Text(
-                text = "Rest counted for spendings: $currency${String.format(Locale.getDefault(), "%.2f", restCountedForSpendings)}",
+                text = "Spendable budget after savings: $currency${String.format(Locale.getDefault(), "%.2f", restCountedForSpendings)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = IncomeGreen,
                 fontWeight = FontWeight.SemiBold
               )
             }
 
-            // Preset chips for quick goal setting
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -576,7 +571,7 @@ fun SavingsGoalScreen(
                     text = "$currency$goalPreset",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    textAlign = TextAlign.Center,
                     color = if (savingsGoalInput == goalPreset) GoalGold else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(vertical = 8.dp)
                   )
@@ -584,19 +579,17 @@ fun SavingsGoalScreen(
               }
             }
 
-            // Monthly Income Input
             OutlinedTextField(
               value = incomeInput,
               onValueChange = { incomeInput = it },
-              label = { Text("Expected Monthly Income ($currency)") },
+              label = { Text("Monthly Income ($currency)") },
               placeholder = { Text("3000") },
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
               singleLine = true,
               modifier = Modifier.fillMaxWidth().testTag("monthly_income_input"),
               shape = RoundedCornerShape(14.dp)
             )
 
-            // Currency Selection Section with Chinese Yuan & World Currencies
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               Text(
                 text = "Currency Symbol",
@@ -604,7 +597,6 @@ fun SavingsGoalScreen(
                 fontWeight = FontWeight.Bold
               )
 
-              // Preset currency chips featuring Chinese Yuan prominently
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
@@ -644,7 +636,6 @@ fun SavingsGoalScreen(
                 }
               }
 
-              // Selected / Custom Currency Input
               OutlinedTextField(
                 value = currencyInput,
                 onValueChange = { if (it.length <= 5) currencyInput = it },
@@ -675,12 +666,12 @@ fun SavingsGoalScreen(
             ) {
               Icon(imageVector = Icons.Default.Check, contentDescription = null)
               Spacer(modifier = Modifier.width(8.dp))
-              Text("Save Savings & Spending Allocation", fontWeight = FontWeight.Bold)
+              Text("Save Settings", fontWeight = FontWeight.Bold)
             }
 
             if (isSavedNoticeVisible) {
               Text(
-                text = "✓ Savings set aside ($currency${String.format(Locale.getDefault(), "%.0f", targetSavings)})! Rest ($currency${String.format(Locale.getDefault(), "%.0f", restCountedForSpendings)}) is counted for spendings.",
+                text = "✓ Settings saved! Savings: $currency${String.format(Locale.getDefault(), "%.0f", targetSavings)} • Spendable: $currency${String.format(Locale.getDefault(), "%.0f", restCountedForSpendings)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = IncomeGreen,
                 fontWeight = FontWeight.SemiBold
@@ -690,12 +681,13 @@ fun SavingsGoalScreen(
         }
       }
 
-      // 3. Long Term Growth Projection Card
+      // 4. Long Term Growth Projection Card
       item {
         Card(
           shape = RoundedCornerShape(20.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = Modifier.fillMaxWidth()
         ) {
           Column(
             modifier = Modifier
@@ -746,7 +738,9 @@ fun SavingsGoalScreen(
                     text = String.format(Locale.getDefault(), "%s%.0f", currency, sixMonthProjection),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = IncomeGreen
+                    color = IncomeGreen,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
@@ -767,7 +761,9 @@ fun SavingsGoalScreen(
                     text = String.format(Locale.getDefault(), "%s%.0f", currency, oneYearProjection),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = IncomeGreen
+                    color = IncomeGreen,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
@@ -775,249 +771,6 @@ fun SavingsGoalScreen(
           }
         }
       }
-
-      // 4. Notifications Center & Test Trigger
-      item {
-        Card(
-          shape = RoundedCornerShape(20.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-          Column(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Box(
-                modifier = Modifier
-                  .size(36.dp)
-                  .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(
-                  imageVector = Icons.Default.NotificationsActive,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                  modifier = Modifier.size(20.dp)
-                )
-              }
-              Spacer(modifier = Modifier.width(10.dp))
-              Column {
-                Text(
-                  text = "Limit Exceed Notifications",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
-                )
-                Text(
-                  text = if (hasNotificationPermission) "System notifications active" else "Permission required",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = if (hasNotificationPermission) IncomeGreen else GoalGold
-                )
-              }
-            }
-
-            Text(
-              text = "The app immediately monitors every daily expense logged and fires an alert notification whenever a category reaches or exceeds its set budget.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                Button(
-                  onClick = {
-                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                  },
-                  shape = RoundedCornerShape(12.dp),
-                  modifier = Modifier.weight(1f)
-                ) {
-                  Text("Enable Notifications")
-                }
-              }
-
-              OutlinedButton(
-                onClick = {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                  }
-                  viewModel.sendTestNotification()
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f).testTag("test_notification_button")
-              ) {
-                Icon(imageVector = Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Test Alert", style = MaterialTheme.typography.bodySmall)
-              }
-            }
-          }
-        }
-      }
-
-      // 5. 1-Month Count Cycle Engine Control
-      item {
-        Card(
-          shape = RoundedCornerShape(20.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-          Column(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Box(
-                modifier = Modifier
-                  .size(36.dp)
-                  .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Autorenew,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(20.dp)
-                )
-              }
-              Spacer(modifier = Modifier.width(10.dp))
-              Column {
-                Text(
-                  text = "1-Month Count Cycle Engine",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
-                )
-                Text(
-                  text = "Day ${monthlyReport.daysElapsed} of ${monthlyReport.daysInCycle} • ${monthlyReport.daysRemainingInCycle} days left",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.primary,
-                  fontWeight = FontWeight.SemiBold
-                )
-              }
-            }
-
-            Text(
-              text = "Expenses, category consumption, and budget limits operate on a strict 1-month count cycle. After each month concludes, calculations automatically start over from $0.00 for the next cycle.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                .padding(12.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Column {
-                Text(
-                  text = "Next Cycle Auto-Reset Date:",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                  text = monthlyReport.nextCycleResetDate,
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontWeight = FontWeight.Bold
-                )
-              }
-
-              OutlinedButton(
-                onClick = { showResetCycleDialog = true },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = ExpenseRed),
-                modifier = Modifier.testTag("manual_reset_cycle_button")
-              ) {
-                Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Restart from $0", style = MaterialTheme.typography.labelMedium)
-              }
-            }
-          }
-        }
-      }
-
-      // 6. Sample Data Generator
-      item {
-        Card(
-          shape = RoundedCornerShape(20.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-        ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "Load Sample Expenses",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-              )
-              Text(
-                text = "Populate realistic sample expenses inside the active 1-month cycle.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Button(
-              onClick = { viewModel.populateSampleData() },
-              shape = RoundedCornerShape(12.dp),
-              modifier = Modifier.testTag("load_sample_data_button")
-            ) {
-              Text("Load Data", style = MaterialTheme.typography.labelMedium)
-            }
-          }
-        }
-      }
-    }
-
-    if (showResetCycleDialog) {
-      AlertDialog(
-        onDismissRequest = { showResetCycleDialog = false },
-        icon = {
-          Icon(
-            imageVector = Icons.Default.RestartAlt,
-            contentDescription = null,
-            tint = ExpenseRed
-          )
-        },
-        title = { Text("Restart 1-Month Cycle from $0?") },
-        text = {
-          Text("This will clear all expenses recorded in the current 1-month cycle and reset spending counters back to $0.00.")
-        },
-        confirmButton = {
-          Button(
-            onClick = {
-              viewModel.resetCurrentMonthCycle()
-              showResetCycleDialog = false
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed)
-          ) {
-            Text("Reset Cycle to $0")
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = { showResetCycleDialog = false }) {
-            Text("Cancel")
-          }
-        }
-      )
     }
   }
 }

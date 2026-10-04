@@ -1,13 +1,11 @@
 package com.example.ui.screens
 
 import android.app.DatePickerDialog
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -26,16 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Paid
-import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -45,16 +36,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,15 +46,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.DefaultCategories
 import com.example.data.model.ExpenseEntity
 import com.example.ui.components.CategoryIconBadge
 import com.example.ui.components.LimitAlertBanner
-import com.example.ui.theme.EmeraldPrimaryLight
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.viewmodel.ExpenseViewModel
 import java.text.SimpleDateFormat
@@ -92,8 +74,6 @@ fun DailyExpenseScreen(
   val monthlyReport by viewModel.monthlyReport.collectAsStateWithLifecycle()
   val activeAlerts by viewModel.activeAlerts.collectAsStateWithLifecycle()
   val dbBudgets by viewModel.categoryBudgets.collectAsStateWithLifecycle()
-
-  var viewingReceiptExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
 
   val totalSpentToday = todayExpenses.sumOf { it.amount }
   val currency = monthlyReport.currencySymbol
@@ -121,7 +101,7 @@ fun DailyExpenseScreen(
         contentColor = MaterialTheme.colorScheme.onPrimary,
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
-          .padding(bottom = 16.dp)
+          .padding(bottom = 8.dp)
           .testTag("add_expense_fab")
       ) {
         Row(
@@ -135,484 +115,373 @@ fun DailyExpenseScreen(
       }
     }
   ) { innerPadding ->
-    LazyColumn(
+    BoxWithConstraints(
       modifier = Modifier
         .fillMaxSize()
         .padding(innerPadding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      contentAlignment = Alignment.TopCenter
     ) {
-      // 1. Date Navigation Bar
-      item {
-        Card(
-          shape = RoundedCornerShape(20.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            IconButton(
-              onClick = {
-                val c = Calendar.getInstance().apply {
-                  timeInMillis = selectedDateMillis
-                  add(Calendar.DAY_OF_YEAR, -1)
-                }
-                viewModel.setSelectedDate(c.timeInMillis)
-              }
-            ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous Day")
-            }
+      val horizontalPad = if (maxWidth < 360.dp) 12.dp else 16.dp
 
-            Column(
-              horizontalAlignment = Alignment.CenterHorizontally,
-              modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable {
-                  val c = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
-                  DatePickerDialog(
-                    context,
-                    { _, y, m, d ->
-                      val newC = Calendar.getInstance().apply {
-                        set(Calendar.YEAR, y)
-                        set(Calendar.MONTH, m)
-                        set(Calendar.DAY_OF_MONTH, d)
-                      }
-                      viewModel.setSelectedDate(newC.timeInMillis)
-                    },
-                    c.get(Calendar.YEAR),
-                    c.get(Calendar.MONTH),
-                    c.get(Calendar.DAY_OF_MONTH)
-                  ).show()
-                }
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                  text = dateTitle,
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                  imageVector = Icons.Default.CalendarMonth,
-                  contentDescription = "Pick Date",
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(16.dp)
-                )
-              }
-              Text(
-                text = fullDateString,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
-
-            IconButton(
-              onClick = {
-                val c = Calendar.getInstance().apply {
-                  timeInMillis = selectedDateMillis
-                  add(Calendar.DAY_OF_YEAR, 1)
-                }
-                viewModel.setSelectedDate(c.timeInMillis)
-              }
-            ) {
-              Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Day")
-            }
-          }
-        }
-      }
-
-      // 2. Active Exceed Alerts (if any)
-      if (activeAlerts.isNotEmpty()) {
-        item {
-          LimitAlertBanner(
-            alerts = activeAlerts,
-            onDismiss = { catName -> viewModel.dismissAlert(catName) },
-            currencySymbol = currency
-          )
-        }
-      }
-
-      // 3. Daily Summary Hero Banner
-      item {
-        Card(
-          shape = RoundedCornerShape(24.dp),
-          colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .background(
-                brush = Brush.linearGradient(
-                  colors = listOf(
-                    MaterialTheme.colorScheme.primary,
-                    MaterialTheme.colorScheme.secondary
-                  )
-                )
-              )
-              .padding(20.dp)
-          ) {
-            Column {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = "Daily Total",
-                  style = MaterialTheme.typography.titleSmall,
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                  fontWeight = FontWeight.Medium
-                )
-                Surface(
-                  shape = RoundedCornerShape(12.dp),
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
-                ) {
-                  Text(
-                    text = "${todayExpenses.size} expenses",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    fontWeight = FontWeight.SemiBold
-                  )
-                }
-              }
-
-              Spacer(modifier = Modifier.height(10.dp))
-
-              Text(
-                text = String.format(Locale.getDefault(), "%s%.2f", currency, totalSpentToday),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onPrimary
-              )
-
-              Spacer(modifier = Modifier.height(14.dp))
-
-              // Daily allowance comparison pill
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clip(RoundedCornerShape(12.dp))
-                  .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f))
-                  .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = "Daily Pace: $currency${String.format(Locale.getDefault(), "%.0f", dailyAllowance)}/day ($currency${String.format(Locale.getDefault(), "%.0f", monthlyReport.spendingBudget)} budget)",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
-                )
-                Text(
-                  text = if (isOverDailyAllowance) "⚠️ Above daily pace" else "✓ Within pace",
-                  style = MaterialTheme.typography.labelSmall,
-                  fontWeight = FontWeight.Bold,
-                  color = if (isOverDailyAllowance) Color(0xFFFFD1D1) else Color(0xFFA7F3D0)
-                )
-              }
-
-              Spacer(modifier = Modifier.height(8.dp))
-
-              // 1-Month Count Cycle Information Pill
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .clip(RoundedCornerShape(12.dp))
-                  .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f))
-                  .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(
-                    imageVector = Icons.Default.Autorenew,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(14.dp)
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text(
-                    text = "1-Month Cycle: Day ${monthlyReport.daysElapsed}/${monthlyReport.daysInCycle}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.95f),
-                    fontWeight = FontWeight.Medium
-                  )
-                }
-                Text(
-                  text = if (monthlyReport.daysRemainingInCycle > 0) "Resets in ${monthlyReport.daysRemainingInCycle}d to $0" else "Cycle ends today",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
-                )
-              }
-            }
-          }
-        }
-      }
-
-      // 4. Section Title
-      item {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Text(
-            text = "Expenses ($dateTitle)",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-          )
-          if (todayExpenses.isNotEmpty()) {
-            Text(
-              text = String.format(Locale.getDefault(), "Total: %s%.2f", currency, totalSpentToday),
-              style = MaterialTheme.typography.bodySmall,
-              fontWeight = FontWeight.SemiBold,
-              color = MaterialTheme.colorScheme.primary
-            )
-          }
-        }
-      }
-
-      // 5. Expense Items or Empty State
-      if (todayExpenses.isEmpty()) {
+      LazyColumn(
+        modifier = Modifier
+          .fillMaxSize()
+          .widthIn(max = 720.dp),
+        contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, top = 8.dp, bottom = 88.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+      ) {
+        // 1. Date Navigation Bar
         item {
           Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(36.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-              verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-              Box(
-                modifier = Modifier
-                  .size(64.dp)
-                  .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Icon(
-                  imageVector = Icons.Default.ReceiptLong,
-                  contentDescription = "No Expenses",
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(32.dp)
-                )
-              }
-              Text(
-                text = "No expenses recorded today",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-              )
-              Text(
-                text = "Calculate and log your daily spending using the + button below.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-              )
-            }
-          }
-        }
-      } else {
-        items(todayExpenses, key = { it.id }) { expense ->
-          val budgetMatch = dbBudgets.find { it.categoryName.equals(expense.category, ignoreCase = true) }
-          val meta = DefaultCategories.getMeta(expense.category, budgetMatch?.iconName, budgetMatch?.colorHex)
-          val timeFormatted = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(expense.dateMillis))
-
-          Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .clip(RoundedCornerShape(16.dp))
-              .clickable { onEditExpense(expense) }
-              .testTag("expense_card_${expense.id}")
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
           ) {
             Row(
               modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              CategoryIconBadge(meta = meta)
+              IconButton(
+                onClick = {
+                  val c = Calendar.getInstance().apply {
+                    timeInMillis = selectedDateMillis
+                    add(Calendar.DAY_OF_YEAR, -1)
+                  }
+                  viewModel.setSelectedDate(c.timeInMillis)
+                }
+              ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous Day")
+              }
 
-              Spacer(modifier = Modifier.width(12.dp))
-
-              Column(modifier = Modifier.weight(1f)) {
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable {
+                    val c = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+                    DatePickerDialog(
+                      context,
+                      { _, y, m, d ->
+                        val newC = Calendar.getInstance().apply {
+                          set(Calendar.YEAR, y)
+                          set(Calendar.MONTH, m)
+                          set(Calendar.DAY_OF_MONTH, d)
+                        }
+                        viewModel.setSelectedDate(newC.timeInMillis)
+                      },
+                      c.get(Calendar.YEAR),
+                      c.get(Calendar.MONTH),
+                      c.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                  }
+                  .padding(horizontal = 8.dp, vertical = 4.dp)
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text(
+                    text = dateTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Icon(
+                    imageVector = Icons.Default.CalendarMonth,
+                    contentDescription = "Pick Date",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                  )
+                }
                 Text(
-                  text = expense.title,
-                  style = MaterialTheme.typography.bodyLarge,
-                  fontWeight = FontWeight.SemiBold,
+                  text = fullDateString,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis
                 )
-
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text(
-                    text = expense.category,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = meta.color,
-                    fontWeight = FontWeight.Medium
-                  )
-                  Text(text = "•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                  Text(
-                    text = timeFormatted,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-                  if (expense.paymentMethod.isNotBlank()) {
-                    Text(text = "•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text(
-                      text = expense.paymentMethod,
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                  }
-                }
-
-                if (expense.note.isNotBlank()) {
-                  Text(
-                    text = expense.note,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
-                  )
-                }
               }
 
-              Spacer(modifier = Modifier.width(8.dp))
-
-              // Receipt Picture Thumbnail (if attached)
-              if (!expense.pictureUri.isNullOrBlank()) {
-                Box(
-                  modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { viewingReceiptExpense = expense }
-                    .testTag("expense_receipt_thumb_${expense.id}")
-                ) {
-                  AsyncImage(
-                    model = ImageRequest.Builder(context)
-                      .data(expense.pictureUri)
-                      .crossfade(true)
-                      .build(),
-                    contentDescription = "Receipt thumbnail",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                  )
-
-                  Surface(
-                    shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.65f),
-                    modifier = Modifier
-                      .size(16.dp)
-                      .align(Alignment.BottomEnd)
-                  ) {
-                    Icon(
-                      imageVector = Icons.Default.Receipt,
-                      contentDescription = null,
-                      tint = Color.White,
-                      modifier = Modifier.padding(2.dp)
-                    )
+              IconButton(
+                onClick = {
+                  val c = Calendar.getInstance().apply {
+                    timeInMillis = selectedDateMillis
+                    add(Calendar.DAY_OF_YEAR, 1)
                   }
+                  viewModel.setSelectedDate(c.timeInMillis)
                 }
-
-                Spacer(modifier = Modifier.width(8.dp))
-              }
-
-              Column(horizontalAlignment = Alignment.End) {
-                Text(
-                  text = String.format(Locale.getDefault(), "-%s%.2f", currency, expense.amount),
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = ExpenseRed
-                )
+              ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Day")
               }
             }
           }
         }
-      }
-    }
-  }
 
-  // Full Screen Receipt Preview Dialog
-  if (viewingReceiptExpense != null && !viewingReceiptExpense?.pictureUri.isNullOrBlank()) {
-    val viewing = viewingReceiptExpense!!
-    Dialog(
-      onDismissRequest = { viewingReceiptExpense = null },
-      properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .background(Color.Black.copy(alpha = 0.92f))
-      ) {
-        Column(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-          horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        // 2. Active Exceed Alerts (if any)
+        if (activeAlerts.isNotEmpty()) {
+          item {
+            LimitAlertBanner(
+              alerts = activeAlerts,
+              onDismiss = { catName -> viewModel.dismissAlert(catName) },
+              currencySymbol = currency
+            )
+          }
+        }
+
+        // 3. Daily Summary Hero Banner
+        item {
+          Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                  brush = Brush.linearGradient(
+                    colors = listOf(
+                      MaterialTheme.colorScheme.primary,
+                      MaterialTheme.colorScheme.secondary
+                    )
+                  )
+                )
+                .padding(18.dp)
+            ) {
+              Column {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = "Daily Total",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.Medium
+                  )
+                  Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                  ) {
+                    Text(
+                      text = "${todayExpenses.size} items",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onPrimary,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                      fontWeight = FontWeight.SemiBold
+                    )
+                  }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                  text = String.format(Locale.getDefault(), "%s%.2f", currency, totalSpentToday),
+                  style = MaterialTheme.typography.headlineLarge,
+                  fontWeight = FontWeight.ExtraBold,
+                  color = MaterialTheme.colorScheme.onPrimary,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Daily allowance comparison pill
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = "Daily Pace: $currency${String.format(Locale.getDefault(), "%.0f", dailyAllowance)}/day ($currency${String.format(Locale.getDefault(), "%.0f", monthlyReport.spendingBudget)} budget)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = if (isOverDailyAllowance) "Above pace" else "On track",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isOverDailyAllowance) Color(0xFFFFD1D1) else Color(0xFFA7F3D0)
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        // 4. Section Title
+        item {
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Column {
+            Text(
+              text = "Expenses ($dateTitle)",
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.weight(1f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            if (todayExpenses.isNotEmpty()) {
+              Spacer(modifier = Modifier.width(8.dp))
               Text(
-                text = viewing.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-              )
-              Text(
-                text = String.format(Locale.getDefault(), "%s • %s%.2f", viewing.category, currency, viewing.amount),
+                text = String.format(Locale.getDefault(), "Total: %s%.2f", currency, totalSpentToday),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.8f)
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
               )
-            }
-
-            IconButton(
-              onClick = { viewingReceiptExpense = null },
-              modifier = Modifier
-                .size(36.dp)
-                .background(Color.White.copy(alpha = 0.2f), CircleShape)
-            ) {
-              Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
           }
+        }
 
-          Spacer(modifier = Modifier.height(16.dp))
+        // 5. Expense Items or Empty State
+        if (todayExpenses.isEmpty()) {
+          item {
+            Card(
+              shape = RoundedCornerShape(20.dp),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+              ) {
+                Box(
+                  modifier = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.ReceiptLong,
+                    contentDescription = "No Expenses",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp)
+                  )
+                }
+                Text(
+                  text = "No expenses recorded for $dateTitle",
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold,
+                  textAlign = TextAlign.Center
+                )
+                Text(
+                  text = "Tap the + Add Expense button below to record your spending.",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  textAlign = TextAlign.Center
+                )
+              }
+            }
+          }
+        } else {
+          items(todayExpenses, key = { it.id }) { expense ->
+            val budgetMatch = dbBudgets.find { it.categoryName.equals(expense.category, ignoreCase = true) }
+            val itemMeta = DefaultCategories.getMetaForExpense(
+              title = expense.title,
+              category = expense.category,
+              iconName = budgetMatch?.iconName,
+              colorHex = budgetMatch?.colorHex
+            )
+            val timeFormatted = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(expense.dateMillis))
+            val safeColor = if (itemMeta.color.alpha < 0.2f) Color(0xFF10B981) else itemMeta.color.copy(alpha = 1f)
 
-          AsyncImage(
-            model = ImageRequest.Builder(context)
-              .data(viewing.pictureUri)
-              .crossfade(true)
-              .build(),
-            contentDescription = viewing.title,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-              .weight(1f)
-              .fillMaxWidth()
-          )
+            Card(
+              shape = RoundedCornerShape(16.dp),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+              elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { onEditExpense(expense) }
+                .testTag("expense_card_${expense.id}")
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                CategoryIconBadge(meta = itemMeta)
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = expense.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                  ) {
+                    Text(
+                      text = expense.category,
+                      style = MaterialTheme.typography.bodySmall,
+                      color = safeColor,
+                      fontWeight = FontWeight.Medium,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                      modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Text(text = "•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                      text = timeFormatted,
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      maxLines = 1
+                    )
+                  }
+
+                  if (expense.note.isNotBlank()) {
+                    Text(
+                      text = expense.note,
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                      modifier = Modifier.padding(top = 2.dp)
+                    )
+                  }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Text(
+                  text = String.format(Locale.getDefault(), "-%s%.2f", currency, expense.amount),
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold,
+                  color = ExpenseRed,
+                  maxLines = 1
+                )
+              }
+            }
+          }
         }
       }
     }
   }
 }
+

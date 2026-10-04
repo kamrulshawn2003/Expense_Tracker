@@ -12,5 +12,6 @@ data class ExpenseEntity(
   val dateMillis: Long,
   val note: String = "",
   val paymentMethod: String = "Card",
-  val pictureUri: String? = null
+  val pictureUri: String? = null,
+  val userEmail: String = "guest"
 )

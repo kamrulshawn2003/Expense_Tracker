@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.AppDatabase
@@ -9,13 +10,17 @@ import com.example.data.model.CategoryMeta
 import com.example.data.model.DefaultCategories
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.MonthlyGoalEntity
+import com.example.data.model.UserAccountEntity
 import com.example.data.repository.ExpenseRepository
 import com.example.notification.BudgetNotificationManager
+import com.example.util.AccountSyncManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -70,10 +75,15 @@ data class MonthBudgetReport(
   val nextCycleResetDate: String = ""
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
 
   private val repository: ExpenseRepository
   private val context = application.applicationContext
+
+  // Active signed-in user email ("guest" when signed out)
+  private val _activeUserEmail = MutableStateFlow("guest")
+  val activeUserEmail: StateFlow<String> = _activeUserEmail.asStateFlow()
 
   // Selected date for Daily view (start of day millis)
   private val _selectedDateMillis = MutableStateFlow(System.currentTimeMillis())
@@ -89,41 +99,73 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
   private val _dismissedAlerts = MutableStateFlow<Set<String>>(emptySet())
   val dismissedAlerts: StateFlow<Set<String>> = _dismissedAlerts.asStateFlow()
 
+  // Auth UI state
+  private val _authErrorMessage = MutableStateFlow<String?>(null)
+  val authErrorMessage: StateFlow<String?> = _authErrorMessage.asStateFlow()
+
+  private val _authFeedbackMessage = MutableStateFlow<String?>(null)
+  val authFeedbackMessage: StateFlow<String?> = _authFeedbackMessage.asStateFlow()
+
+  private val _isAuthLoading = MutableStateFlow(false)
+  val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
+
+  val isFirebaseConfigured: Boolean
+    get() = AccountSyncManager.isFirebaseAvailable(context)
+
   init {
     val database = AppDatabase.getDatabase(context, viewModelScope)
     repository = ExpenseRepository(database.expenseDao(), context)
+    val savedEmail = repository.getSavedActiveUserEmail()
+    _activeUserEmail.value = savedEmail
     viewModelScope.launch {
-      repository.ensureDefaultBudgets()
+      repository.ensureDefaultBudgets(savedEmail)
     }
   }
 
-  val allExpenses: StateFlow<List<ExpenseEntity>> = repository.allExpenses
+  val registeredAccounts: StateFlow<List<UserAccountEntity>> = repository.allUserAccounts
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-  val categoryBudgets: StateFlow<List<CategoryBudgetEntity>> = repository.categoryBudgets
+  val currentUserAccount: StateFlow<UserAccountEntity?> = combine(
+    registeredAccounts,
+    _activeUserEmail
+  ) { accounts, email ->
+    if (email == "guest" || email.isBlank()) null
+    else accounts.find { it.email.equals(email, ignoreCase = true) }
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+  val allExpenses: StateFlow<List<ExpenseEntity>> = _activeUserEmail
+    .flatMapLatest { email -> repository.getExpensesForUser(email) }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-  // Dynamic monthly goal flow for selected month
+  val categoryBudgets: StateFlow<List<CategoryBudgetEntity>> = _activeUserEmail
+    .flatMapLatest { email -> repository.getCategoryBudgetsForUser(email) }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+  // Dynamic monthly goal flow for selected month and active user
   private val _monthlyGoalData = MutableStateFlow(MonthlyGoalEntity(yearMonth = _selectedYearMonth.value))
   val monthlyGoal: StateFlow<MonthlyGoalEntity> = _monthlyGoalData.asStateFlow()
 
   init {
     viewModelScope.launch {
-      _selectedYearMonth.collect { ym ->
-        repository.getMonthlyGoal(ym).collect { goal ->
+      combine(_activeUserEmail, _selectedYearMonth) { email, ym -> email to ym }
+        .flatMapLatest { (email, ym) ->
+          repository.getMonthlyGoal(email, ym)
+        }
+        .collect { goal ->
+          val ym = _selectedYearMonth.value
+          val email = _activeUserEmail.value
           if (goal != null) {
             _monthlyGoalData.value = goal
           } else {
-            // Default goal for new months
             _monthlyGoalData.value = MonthlyGoalEntity(
               yearMonth = ym,
               savingsGoal = 500.0,
               monthlyIncome = 3000.0,
-              currencySymbol = "$"
+              currencySymbol = "$",
+              userEmail = email
             )
           }
         }
-      }
     }
   }
 
@@ -219,7 +261,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         isWarning = isWarning,
         pictureUri = budgetItem?.pictureUri,
         iconName = budgetItem?.iconName ?: meta.iconName,
-        colorHex = budgetItem?.colorHex ?: meta.color.value.toLong()
+        colorHex = DefaultCategories.colorToHexLong(meta.color)
       )
     }.sortedByDescending { it.spent }
 
@@ -340,13 +382,121 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     report.categorySummaries.filter { it.isExceeded && !dismissed.contains(it.categoryName) }
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+  fun clearAuthMessages() {
+    _authErrorMessage.value = null
+    _authFeedbackMessage.value = null
+  }
+
+  fun createAccount(
+    displayName: String,
+    email: String,
+    password: String,
+    claimGuestExpenses: Boolean = true,
+    onSuccess: () -> Unit = {}
+  ) {
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      _authErrorMessage.value = null
+      _authFeedbackMessage.value = null
+      val result = repository.createAccount(displayName, email, password, claimGuestExpenses)
+      _isAuthLoading.value = false
+      result.fold(
+        onSuccess = { account ->
+          _activeUserEmail.value = account.email
+          _authFeedbackMessage.value = "Account created & expenses backed up for ${account.displayName}!"
+          onSuccess()
+        },
+        onFailure = { err ->
+          _authErrorMessage.value = err.message ?: "Could not create account."
+        }
+      )
+    }
+  }
+
+  fun signIn(
+    email: String,
+    password: String,
+    onSuccess: () -> Unit = {}
+  ) {
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      _authErrorMessage.value = null
+      _authFeedbackMessage.value = null
+      val result = repository.signIn(email, password)
+      _isAuthLoading.value = false
+      result.fold(
+        onSuccess = { account ->
+          _activeUserEmail.value = account.email
+          _authFeedbackMessage.value = "Welcome back, ${account.displayName}! Your previous expenses are restored."
+          onSuccess()
+        },
+        onFailure = { err ->
+          _authErrorMessage.value = err.message ?: "Sign in failed."
+        }
+      )
+    }
+  }
+
+  fun signOut() {
+    viewModelScope.launch {
+      repository.signOut()
+      _activeUserEmail.value = "guest"
+      _authFeedbackMessage.value = "Signed out. Sign in anytime to view your saved account expenses."
+      _authErrorMessage.value = null
+    }
+  }
+
+  fun syncAccountNow() {
+    val email = _activeUserEmail.value
+    if (email == "guest") return
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      repository.syncAccountData(email)
+      _isAuthLoading.value = false
+      _authFeedbackMessage.value = "All expenses & budgets synced and backed up!"
+    }
+  }
+
+  fun exportAccountBackup(uri: Uri) {
+    val email = _activeUserEmail.value
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      val ok = repository.exportUserAccountBackup(email, uri)
+      _isAuthLoading.value = false
+      if (ok) {
+        _authFeedbackMessage.value = "Backup file saved! You can restore this file even after reinstalling the app."
+      } else {
+        _authErrorMessage.value = "Failed to export backup file."
+      }
+    }
+  }
+
+  fun importAccountBackup(uri: Uri, onSuccess: () -> Unit = {}) {
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      _authErrorMessage.value = null
+      val result = repository.importAndRestoreAccountBackup(uri)
+      _isAuthLoading.value = false
+      result.fold(
+        onSuccess = { account ->
+          _activeUserEmail.value = account.email
+          _authFeedbackMessage.value = "Restored account & expenses for ${account.displayName}!"
+          onSuccess()
+        },
+        onFailure = { err ->
+          _authErrorMessage.value = err.message ?: "Could not restore backup file."
+        }
+      )
+    }
+  }
+
   fun dismissAlert(categoryName: String) {
     _dismissedAlerts.value = _dismissedAlerts.value + categoryName
   }
 
   fun resetCurrentMonthCycle() {
     viewModelScope.launch {
-      repository.resetMonthCycleExpenses(_selectedYearMonth.value)
+      repository.resetMonthCycleExpenses(_activeUserEmail.value, _selectedYearMonth.value)
     }
   }
 
@@ -378,10 +528,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     category: String,
     dateMillis: Long = _selectedDateMillis.value,
     note: String = "",
-    paymentMethod: String = "Card",
+    paymentMethod: String = "",
     pictureUri: String? = null
   ) {
     if (amount <= 0 || title.isBlank()) return
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
       repository.insertExpense(
         ExpenseEntity(
@@ -391,7 +542,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           dateMillis = dateMillis,
           note = note.trim(),
           paymentMethod = paymentMethod,
-          pictureUri = pictureUri
+          pictureUri = pictureUri,
+          userEmail = currentEmail
         )
       )
     }
@@ -399,7 +551,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
   fun updateExpense(expense: ExpenseEntity) {
     viewModelScope.launch {
-      repository.updateExpense(expense)
+      repository.updateExpense(expense.copy(userEmail = _activeUserEmail.value))
     }
   }
 
@@ -411,17 +563,18 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
   fun deleteExpenseById(id: Long) {
     viewModelScope.launch {
-      repository.deleteExpenseById(id)
+      repository.deleteExpenseById(id, _activeUserEmail.value)
     }
   }
 
   fun saveCategoryBudget(
     categoryName: String,
     limit: Double,
-    iconName: String = "category",
+    iconName: String = "other",
     colorHex: Long = 0xFF10B981,
     pictureUri: String? = null
   ) {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
       repository.saveCategoryBudget(
         CategoryBudgetEntity(
@@ -429,15 +582,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           monthlyLimit = limit,
           iconName = iconName,
           colorHex = colorHex,
-          pictureUri = pictureUri
+          pictureUri = pictureUri,
+          userEmail = currentEmail
         )
       )
     }
   }
 
   fun deleteCategoryBudget(categoryName: String) {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
-      repository.deleteCategoryBudget(categoryName)
+      repository.deleteCategoryBudget(currentEmail, categoryName)
     }
   }
 
@@ -448,6 +603,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     colorHex: Long? = null,
     pictureUri: String? = null
   ) {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
       val existing = categoryBudgets.value.find { it.categoryName == categoryName }
       val meta = DefaultCategories.getMeta(categoryName, existing?.iconName, existing?.colorHex)
@@ -456,33 +612,26 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           categoryName = categoryName,
           monthlyLimit = newLimit,
           iconName = iconName ?: existing?.iconName ?: meta.iconName,
-          colorHex = colorHex ?: existing?.colorHex ?: meta.color.value.toLong(),
-          pictureUri = if (pictureUri != null) pictureUri else existing?.pictureUri
+          colorHex = colorHex ?: DefaultCategories.colorToHexLong(meta.color),
+          pictureUri = if (pictureUri != null) pictureUri else existing?.pictureUri,
+          userEmail = currentEmail
         )
       )
     }
   }
 
   fun updateMonthlyGoal(savingsGoal: Double, monthlyIncome: Double, currency: String = "$") {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
       val updated = MonthlyGoalEntity(
         yearMonth = _selectedYearMonth.value,
         savingsGoal = savingsGoal,
         monthlyIncome = monthlyIncome,
-        currencySymbol = currency
+        currencySymbol = currency,
+        userEmail = currentEmail
       )
       repository.updateMonthlyGoal(updated)
       _monthlyGoalData.value = updated
-    }
-  }
-
-  fun sendTestNotification() {
-    BudgetNotificationManager.sendTestNotification(context)
-  }
-
-  fun populateSampleData() {
-    viewModelScope.launch {
-      repository.populateSampleData()
     }
   }
 }
