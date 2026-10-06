@@ -1,7 +1,15 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.app.DatePickerDialog
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +18,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -19,13 +28,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,18 +64,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.data.model.DefaultCategories
 import com.example.data.model.ExpenseEntity
 import com.example.ui.components.CategoryIconBadge
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import com.example.ui.viewmodel.ExpenseViewModel
+import com.example.util.ImageStorageHelper
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -93,6 +112,39 @@ fun AddExpenseBottomSheet(
     mutableLongStateOf(editingExpense?.dateMillis ?: System.currentTimeMillis())
   }
   var note by remember { mutableStateOf(editingExpense?.note ?: "") }
+  var pictureUri by remember { mutableStateOf(editingExpense?.pictureUri) }
+
+  // Gallery Receipt Picker (Zero-permission Android Photo Picker)
+  val photoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia()
+  ) { uri: Uri? ->
+    if (uri != null) {
+      val savedPath = ImageStorageHelper.saveImageFromUri(context, uri, "expense_receipts")
+      if (savedPath != null) {
+        pictureUri = savedPath
+      }
+    }
+  }
+
+  // Camera Receipt Capture
+  val cameraLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicturePreview()
+  ) { bitmap: Bitmap? ->
+    if (bitmap != null) {
+      val savedPath = ImageStorageHelper.saveBitmap(context, bitmap, "expense_receipts")
+      if (savedPath != null) {
+        pictureUri = savedPath
+      }
+    }
+  }
+
+  val cameraPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission()
+  ) { isGranted: Boolean ->
+    if (isGranted) {
+      cameraLauncher.launch(null)
+    }
+  }
 
   // Available categories: combine DB budgets and default categories
   val availableCategories = remember(dbBudgets) {
@@ -181,7 +233,8 @@ fun AddExpenseBottomSheet(
             CategoryIconBadge(
               meta = liveItemMeta,
               size = 42.dp,
-              iconSize = 22.dp
+              iconSize = 22.dp,
+              pictureUri = pictureUri
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column {
@@ -340,6 +393,129 @@ fun AddExpenseBottomSheet(
           Text(text = "Date: $dateFormatted", style = MaterialTheme.typography.bodyMedium)
         }
 
+        // Add Receipt / Photo Option
+        Surface(
+          shape = RoundedCornerShape(16.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.Default.Receipt,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "Add Receipt or Item Photo (Optional)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+              )
+            }
+
+            if (!pictureUri.isNullOrBlank()) {
+              val modelData: Any = remember(pictureUri) {
+                if (pictureUri!!.startsWith("/")) File(pictureUri!!) else Uri.parse(pictureUri!!)
+              }
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(140.dp)
+                  .clip(RoundedCornerShape(12.dp))
+                  .background(MaterialTheme.colorScheme.surfaceVariant)
+              ) {
+                AsyncImage(
+                  model = modelData,
+                  contentDescription = "Attached Receipt",
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.fillMaxSize()
+                )
+                IconButton(
+                  onClick = { pictureUri = null },
+                  modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .testTag("remove_receipt_button")
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Remove Receipt",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                  )
+                }
+              }
+            }
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              OutlinedButton(
+                onClick = {
+                  photoPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                  )
+                },
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("add_receipt_gallery_button"),
+                shape = RoundedCornerShape(12.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.PhotoLibrary,
+                  contentDescription = "Gallery",
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = if (pictureUri == null) "Gallery" else "Change Photo",
+                  style = MaterialTheme.typography.labelMedium,
+                  fontWeight = FontWeight.SemiBold
+                )
+              }
+
+              OutlinedButton(
+                onClick = {
+                  val hasCameraPerm = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.CAMERA
+                  ) == PackageManager.PERMISSION_GRANTED
+                  if (hasCameraPerm) {
+                    cameraLauncher.launch(null)
+                  } else {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                  }
+                },
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("add_receipt_camera_button"),
+                shape = RoundedCornerShape(12.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.CameraAlt,
+                  contentDescription = "Camera",
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = "Camera",
+                  style = MaterialTheme.typography.labelMedium,
+                  fontWeight = FontWeight.SemiBold
+                )
+              }
+            }
+          }
+        }
+
         // Optional Note
         OutlinedTextField(
           value = note,
@@ -364,7 +540,7 @@ fun AddExpenseBottomSheet(
                   dateMillis = selectedDateMillis,
                   note = note,
                   paymentMethod = "",
-                  pictureUri = null
+                  pictureUri = pictureUri
                 )
               } else {
                 viewModel.updateExpense(
@@ -374,7 +550,8 @@ fun AddExpenseBottomSheet(
                     category = selectedCategory,
                     dateMillis = selectedDateMillis,
                     note = note.trim(),
-                    paymentMethod = ""
+                    paymentMethod = "",
+                    pictureUri = pictureUri
                   )
                 )
               }
@@ -403,4 +580,3 @@ fun AddExpenseBottomSheet(
     }
   }
 }
-

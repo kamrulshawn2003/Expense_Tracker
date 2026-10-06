@@ -171,13 +171,13 @@ fun MainScreen(
               } else {
                 Icon(
                   imageVector = Icons.Default.AccountCircle,
-                  contentDescription = "Sign In or Create Account",
+                  contentDescription = "Login with Gmail",
                   tint = MaterialTheme.colorScheme.primary,
                   modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                  text = "Sign In",
+                  text = "Gmail Backup",
                   style = MaterialTheme.typography.labelMedium,
                   fontWeight = FontWeight.Bold,
                   color = MaterialTheme.colorScheme.primary
@@ -275,7 +275,7 @@ fun MainScreen(
                   Spacer(modifier = Modifier.width(8.dp))
                   Column(modifier = Modifier.weight(1f)) {
                     Text(
-                      text = "Save Expenses to Your Account",
+                      text = "Google Drive Backup via Gmail",
                       style = MaterialTheme.typography.labelLarge,
                       fontWeight = FontWeight.Bold,
                       color = MaterialTheme.colorScheme.onSurface,
@@ -283,7 +283,7 @@ fun MainScreen(
                       overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                      text = "Sign in to keep your expense records safe",
+                      text = "Sign in with Gmail to back up & restore after reinstall",
                       style = MaterialTheme.typography.labelSmall,
                       color = MaterialTheme.colorScheme.onSurfaceVariant,
                       maxLines = 1,
@@ -304,7 +304,7 @@ fun MainScreen(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.weight(1f).height(34.dp).testTag("banner_signin_button")
                   ) {
-                    Text("Sign In", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Gmail Login", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                   }
                   Button(
                     onClick = {
@@ -312,13 +312,13 @@ fun MainScreen(
                       showAuthDialog = true
                     },
                     shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    colors = ButtonDefaults.buttonColors(containerColor = IncomeGreen),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.weight(1f).height(34.dp).testTag("banner_create_account_button")
                   ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Sign Up", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Gmail Sign Up", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
                   }
                 }
               }
@@ -337,19 +337,19 @@ fun MainScreen(
                   Icon(
                     imageVector = Icons.Default.CloudUpload,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = IncomeGreen,
                     modifier = Modifier.size(22.dp)
                   )
                   Spacer(modifier = Modifier.width(10.dp))
                   Column {
                     Text(
-                      text = "Save Expenses to Your Account",
+                      text = "Google Drive Backup via Gmail",
                       style = MaterialTheme.typography.labelLarge,
                       fontWeight = FontWeight.Bold,
                       color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                      text = "Sign in so you never lose your expense details if you reinstall",
+                      text = "Sign in with Gmail to back up & restore anytime after reinstall",
                       style = MaterialTheme.typography.labelSmall,
                       color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -366,7 +366,7 @@ fun MainScreen(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.testTag("banner_signin_button")
                   ) {
-                    Text("Sign In", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Gmail Login", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                   }
                   Button(
                     onClick = {
@@ -374,13 +374,13 @@ fun MainScreen(
                       showAuthDialog = true
                     },
                     shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    colors = ButtonDefaults.buttonColors(containerColor = IncomeGreen),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.testTag("banner_create_account_button")
                   ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Sign Up", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Gmail Sign Up", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
                   }
                 }
               }

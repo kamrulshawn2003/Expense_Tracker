@@ -422,7 +422,10 @@ fun DailyExpenseScreen(
                   .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                CategoryIconBadge(meta = itemMeta)
+                CategoryIconBadge(
+                  meta = itemMeta,
+                  pictureUri = expense.pictureUri ?: budgetMatch?.pictureUri
+                )
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -455,6 +458,16 @@ fun DailyExpenseScreen(
                       color = MaterialTheme.colorScheme.onSurfaceVariant,
                       maxLines = 1
                     )
+                    if (!expense.pictureUri.isNullOrBlank()) {
+                      Text(text = "•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                      Text(
+                        text = "Receipt",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                      )
+                    }
                   }
 
                   if (expense.note.isNotBlank()) {

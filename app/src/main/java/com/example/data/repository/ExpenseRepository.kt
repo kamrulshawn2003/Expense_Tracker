@@ -1,7 +1,6 @@
 package com.example.data.repository
 
 import android.content.Context
-import android.net.Uri
 import com.example.data.db.ExpenseDao
 import com.example.data.model.CategoryBudgetEntity
 import com.example.data.model.DefaultCategories
@@ -17,6 +16,15 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+data class GmailAuthSyncResult(
+  val account: UserAccountEntity,
+  val restoredFromGoogleDrive: Boolean,
+  val restoredExpenseCount: Int,
+  val totalExpenseCount: Int,
+  val backupSizeBytes: Int,
+  val lastBackupTimeMillis: Long
+)
+
 class ExpenseRepository(
   private val expenseDao: ExpenseDao,
   private val context: Context
@@ -26,12 +34,51 @@ class ExpenseRepository(
 
   val allUserAccounts: Flow<List<UserAccountEntity>> = expenseDao.getAllUserAccounts()
 
+  init {
+    // Ensure Firebase cloud backup backend is initialized on startup
+    AccountSyncManager.isFirebaseAvailable(context)
+  }
+
   fun getSavedActiveUserEmail(): String {
     return authPrefs.getString("active_user_email", "guest") ?: "guest"
   }
 
   fun setSavedActiveUserEmail(email: String) {
     authPrefs.edit().putString("active_user_email", email).apply()
+  }
+
+  fun getSavedDriveAccessToken(email: String): String? {
+    val key = "drive_token_${AccountSyncManager.normalizeEmail(email)}"
+    return authPrefs.getString(key, null)
+  }
+
+  fun setSavedDriveAccessToken(email: String, token: String?) {
+    val key = "drive_token_${AccountSyncManager.normalizeEmail(email)}"
+    if (token.isNullOrBlank()) {
+      authPrefs.edit().remove(key).apply()
+    } else {
+      authPrefs.edit().putString(key, token).apply()
+    }
+  }
+
+  fun getBackupFrequency(email: String): String {
+    val key = "backup_freq_${AccountSyncManager.normalizeEmail(email)}"
+    return authPrefs.getString(key, "Daily") ?: "Daily"
+  }
+
+  fun setBackupFrequency(email: String, frequency: String) {
+    val key = "backup_freq_${AccountSyncManager.normalizeEmail(email)}"
+    authPrefs.edit().putString(key, frequency).apply()
+  }
+
+  fun getLastBackupSizeBytes(email: String): Int {
+    val key = "backup_size_${AccountSyncManager.normalizeEmail(email)}"
+    return authPrefs.getInt(key, 0)
+  }
+
+  private fun setLastBackupSizeBytes(email: String, sizeBytes: Int) {
+    val key = "backup_size_${AccountSyncManager.normalizeEmail(email)}"
+    authPrefs.edit().putInt(key, sizeBytes).apply()
   }
 
   suspend fun getUserAccount(email: String): UserAccountEntity? {
@@ -58,7 +105,7 @@ class ExpenseRepository(
   suspend fun insertExpense(expense: ExpenseEntity): Long {
     val id = expenseDao.insertExpense(expense)
     checkAndNotifyCategoryLimit(expense.userEmail, expense.category, expense.dateMillis)
-    if (expense.userEmail != "guest") {
+    if (expense.userEmail != "guest" && getBackupFrequency(expense.userEmail) != "Only when I tap Back Up") {
       syncAccountData(expense.userEmail)
     }
     return id
@@ -67,21 +114,21 @@ class ExpenseRepository(
   suspend fun updateExpense(expense: ExpenseEntity) {
     expenseDao.updateExpense(expense)
     checkAndNotifyCategoryLimit(expense.userEmail, expense.category, expense.dateMillis)
-    if (expense.userEmail != "guest") {
+    if (expense.userEmail != "guest" && getBackupFrequency(expense.userEmail) != "Only when I tap Back Up") {
       syncAccountData(expense.userEmail)
     }
   }
 
   suspend fun deleteExpense(expense: ExpenseEntity) {
     expenseDao.deleteExpense(expense)
-    if (expense.userEmail != "guest") {
+    if (expense.userEmail != "guest" && getBackupFrequency(expense.userEmail) != "Only when I tap Back Up") {
       syncAccountData(expense.userEmail)
     }
   }
 
   suspend fun deleteExpenseById(id: Long, userEmail: String = "guest") {
     expenseDao.deleteExpenseById(id)
-    if (userEmail != "guest") {
+    if (userEmail != "guest" && getBackupFrequency(userEmail) != "Only when I tap Back Up") {
       syncAccountData(userEmail)
     }
   }
@@ -112,14 +159,14 @@ class ExpenseRepository(
 
   suspend fun updateCategoryBudget(budget: CategoryBudgetEntity) {
     expenseDao.insertOrUpdateCategoryBudget(budget)
-    if (budget.userEmail != "guest") {
+    if (budget.userEmail != "guest" && getBackupFrequency(budget.userEmail) != "Only when I tap Back Up") {
       syncAccountData(budget.userEmail)
     }
   }
 
   suspend fun saveCategoryBudget(budget: CategoryBudgetEntity) {
     expenseDao.insertOrUpdateCategoryBudget(budget)
-    if (budget.userEmail != "guest") {
+    if (budget.userEmail != "guest" && getBackupFrequency(budget.userEmail) != "Only when I tap Back Up") {
       syncAccountData(budget.userEmail)
     }
   }
@@ -127,145 +174,197 @@ class ExpenseRepository(
   suspend fun deleteCategoryBudget(userEmail: String, categoryName: String) {
     expenseDao.updateExpenseCategory(userEmail, categoryName, "Other")
     expenseDao.deleteCategoryBudgetByName(userEmail, categoryName)
-    if (userEmail != "guest") {
+    if (userEmail != "guest" && getBackupFrequency(userEmail) != "Only when I tap Back Up") {
       syncAccountData(userEmail)
     }
   }
 
   suspend fun updateMonthlyGoal(goal: MonthlyGoalEntity) {
     expenseDao.insertOrUpdateMonthlyGoal(goal)
-    if (goal.userEmail != "guest") {
+    if (goal.userEmail != "guest" && getBackupFrequency(goal.userEmail) != "Only when I tap Back Up") {
       syncAccountData(goal.userEmail)
     }
   }
 
-  suspend fun createAccount(
-    displayName: String,
+  /**
+   * Unified WhatsApp-style Gmail Sign-In / Sign-Up & Automatic Google Drive Restore.
+   * Strictly requires a valid @gmail.com address.
+   * When a user signs in with their Gmail (even after uninstalling and reinstalling the app),
+   * it automatically checks Google Drive & Cloud for their saved backup, restores all expenses,
+   * budgets, and savings goals, merges any guest expenses if requested, and syncs back to Google Drive.
+   */
+  suspend fun signInOrSignUpWithGmail(
     email: String,
-    password: String,
+    displayName: String = "",
+    googleIdToken: String? = null,
+    driveAccessToken: String? = null,
     claimGuestExpenses: Boolean = true
-  ): Result<UserAccountEntity> {
+  ): Result<GmailAuthSyncResult> {
     val normalizedEmail = AccountSyncManager.normalizeEmail(email)
-    val trimmedName = displayName.trim().ifBlank { normalizedEmail.substringBefore("@") }
-
-    if (normalizedEmail.isBlank() || !normalizedEmail.contains("@")) {
-      return Result.failure(IllegalArgumentException("Please enter a valid email address."))
-    }
-    if (password.length < 4) {
-      return Result.failure(IllegalArgumentException("Password must be at least 4 characters."))
-    }
-
-    val existingLocal = expenseDao.getUserAccountByEmail(normalizedEmail)
-    if (existingLocal != null) {
-      return Result.failure(IllegalArgumentException("An account with this email already exists. Please sign in instead."))
-    }
-
-    val passwordHash = AccountSyncManager.hashPassword(password)
-    val now = System.currentTimeMillis()
-    val newAccount = UserAccountEntity(
-      email = normalizedEmail,
-      displayName = trimmedName,
-      passwordHash = passwordHash,
-      createdAt = now,
-      lastSyncedAt = now
-    )
-
-    expenseDao.insertOrUpdateUserAccount(newAccount)
-
-    // Attempt cloud registration if Firebase is configured
-    AccountSyncManager.createCloudAccountIfAvailable(context, normalizedEmail, password, trimmedName)
-
-    // Copy/claim guest expenses, budgets, and goals into this new account if requested
-    val existingUserExpenses = expenseDao.getAllExpensesForUserSync(normalizedEmail)
-    if (claimGuestExpenses && existingUserExpenses.isEmpty()) {
-      val guestExpenses = expenseDao.getAllExpensesForUserSync("guest")
-      if (guestExpenses.isNotEmpty()) {
-        val copiedExpenses = guestExpenses.map {
-          it.copy(id = 0L, userEmail = normalizedEmail)
-        }
-        expenseDao.insertExpenses(copiedExpenses)
-      }
-
-      val guestBudgets = expenseDao.getAllCategoryBudgetsSync("guest")
-      if (guestBudgets.isNotEmpty()) {
-        val copiedBudgets = guestBudgets.map {
-          it.copy(userEmail = normalizedEmail)
-        }
-        expenseDao.upsertCategoryBudgets(copiedBudgets)
-      }
-
-      val guestGoals = expenseDao.getAllMonthlyGoalsSync("guest")
-      if (guestGoals.isNotEmpty()) {
-        val copiedGoals = guestGoals.map {
-          it.copy(userEmail = normalizedEmail)
-        }
-        expenseDao.insertMonthlyGoals(copiedGoals)
-      }
-    }
-
-    ensureDefaultBudgets(normalizedEmail)
-    setSavedActiveUserEmail(normalizedEmail)
-    syncAccountData(normalizedEmail)
-
-    return Result.success(newAccount)
-  }
-
-  suspend fun signIn(
-    email: String,
-    password: String
-  ): Result<UserAccountEntity> {
-    val normalizedEmail = AccountSyncManager.normalizeEmail(email)
-    if (normalizedEmail.isBlank() || !normalizedEmail.contains("@")) {
-      return Result.failure(IllegalArgumentException("Please enter a valid email address."))
-    }
-    if (password.isBlank()) {
-      return Result.failure(IllegalArgumentException("Please enter your password."))
-    }
-
-    val passwordHash = AccountSyncManager.hashPassword(password)
-
-    // 1. Check if cloud or local backup snapshot exists (e.g., after app reinstall)
-    val remoteOrSnapshotBackup = AccountSyncManager.signInAndFetchCloudBackupIfAvailable(
-      context = context,
-      email = normalizedEmail,
-      password = password
-    )
-
-    val localAccount = expenseDao.getUserAccountByEmail(normalizedEmail)
-
-    if (localAccount == null && remoteOrSnapshotBackup == null) {
+    if (!AccountSyncManager.isValidGmailAddress(normalizedEmail)) {
       return Result.failure(
-        IllegalArgumentException("No account found for $normalizedEmail. Please create an account or restore from a backup file.")
+        IllegalArgumentException("Please enter a valid Gmail address (ending with @gmail.com) to use Google Drive backup.")
       )
     }
 
-    // Verify password hash if available
-    val expectedHash = localAccount?.passwordHash ?: remoteOrSnapshotBackup?.passwordHash.orEmpty()
-    if (expectedHash.isNotBlank() && expectedHash != passwordHash) {
-      return Result.failure(IllegalArgumentException("Incorrect password. Please try again."))
+    if (!driveAccessToken.isNullOrBlank()) {
+      setSavedDriveAccessToken(normalizedEmail, driveAccessToken)
+    }
+    val effectiveDriveToken = driveAccessToken ?: getSavedDriveAccessToken(normalizedEmail)
+
+    if (!googleIdToken.isNullOrBlank()) {
+      AccountSyncManager.signInWithGoogleIdTokenIfAvailable(context, googleIdToken)
     }
 
-    // If we have a remote/snapshot backup and local expenses for this user are empty (e.g. fresh reinstall), restore them!
-    val currentLocalExpenses = expenseDao.getAllExpensesForUserSync(normalizedEmail)
-    if (remoteOrSnapshotBackup != null && currentLocalExpenses.isEmpty()) {
-      restoreBackupIntoDatabase(remoteOrSnapshotBackup)
-    }
-
-    val finalAccount = expenseDao.getUserAccountByEmail(normalizedEmail) ?: UserAccountEntity(
+    // 1. Check Google Drive & Cloud for an existing WhatsApp-style backup for this Gmail
+    val remoteBackup = AccountSyncManager.fetchGmailCloudBackup(
+      context = context,
       email = normalizedEmail,
-      displayName = remoteOrSnapshotBackup?.displayName ?: normalizedEmail.substringBefore("@"),
-      passwordHash = passwordHash,
-      createdAt = remoteOrSnapshotBackup?.createdAt ?: System.currentTimeMillis(),
-      lastSyncedAt = System.currentTimeMillis()
+      driveAccessToken = effectiveDriveToken
     )
 
-    val updatedAccount = finalAccount.copy(lastSyncedAt = System.currentTimeMillis())
-    expenseDao.insertOrUpdateUserAccount(updatedAccount)
+    val localAccount = expenseDao.getUserAccountByEmail(normalizedEmail)
+    val resolvedName = displayName.trim()
+      .ifBlank { remoteBackup?.displayName.orEmpty() }
+      .ifBlank { localAccount?.displayName.orEmpty() }
+      .ifBlank {
+        normalizedEmail.substringBefore("@")
+          .replace(".", " ")
+          .replace("_", " ")
+          .split(" ")
+          .filter { it.isNotBlank() }
+          .joinToString(" ") { part ->
+            part.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+          }
+          .ifBlank { normalizedEmail.substringBefore("@") }
+      }
+
+    val beforeCount = expenseDao.getAllExpensesForUserSync(normalizedEmail).size
+    var restoredFromDrive = false
+
+    // 2. If a Google Drive / Cloud backup exists, restore and merge its records into the local database!
+    if (remoteBackup != null) {
+      restoreBackupIntoDatabase(remoteBackup.copy(displayName = resolvedName))
+      if (remoteBackup.expenses.isNotEmpty() || remoteBackup.budgets.isNotEmpty()) {
+        restoredFromDrive = true
+      }
+      if (remoteBackup.backupFrequency.isNotBlank()) {
+        setBackupFrequency(normalizedEmail, remoteBackup.backupFrequency)
+      }
+    }
+
+    // 3. Also copy/merge any guest expenses recorded prior to signing in if requested
+    if (claimGuestExpenses) {
+      mergeGuestDataIntoGmailAccount(normalizedEmail)
+    }
+
+    val now = System.currentTimeMillis()
+    val finalAccount = UserAccountEntity(
+      email = normalizedEmail,
+      displayName = resolvedName,
+      passwordHash = localAccount?.passwordHash ?: remoteBackup?.passwordHash.orEmpty(),
+      createdAt = localAccount?.createdAt ?: remoteBackup?.createdAt ?: now,
+      lastSyncedAt = now
+    )
+    expenseDao.insertOrUpdateUserAccount(finalAccount)
+
     ensureDefaultBudgets(normalizedEmail)
     setSavedActiveUserEmail(normalizedEmail)
-    syncAccountData(normalizedEmail)
 
-    return Result.success(updatedAccount)
+    // 4. Immediately sync the complete merged state back to Google Drive
+    syncAccountData(normalizedEmail, effectiveDriveToken)
+
+    val afterCount = expenseDao.getAllExpensesForUserSync(normalizedEmail).size
+    val restoredCount = (afterCount - beforeCount).coerceAtLeast(if (restoredFromDrive) remoteBackup?.expenses?.size ?: 0 else 0)
+    val sizeBytes = getLastBackupSizeBytes(normalizedEmail)
+
+    return Result.success(
+      GmailAuthSyncResult(
+        account = finalAccount,
+        restoredFromGoogleDrive = restoredFromDrive,
+        restoredExpenseCount = restoredCount,
+        totalExpenseCount = afterCount,
+        backupSizeBytes = sizeBytes,
+        lastBackupTimeMillis = now
+      )
+    )
+  }
+
+  /**
+   * Explicitly fetches and restores the user's expense history from Google Drive for their active Gmail.
+   */
+  suspend fun restoreFromGoogleDrive(
+    userEmail: String,
+    driveAccessToken: String? = null
+  ): Result<GmailAuthSyncResult> {
+    val normalizedEmail = AccountSyncManager.normalizeEmail(userEmail)
+    if (!AccountSyncManager.isValidGmailAddress(normalizedEmail)) {
+      return Result.failure(IllegalArgumentException("Please sign in with a Gmail (@gmail.com) account first."))
+    }
+
+    if (!driveAccessToken.isNullOrBlank()) {
+      setSavedDriveAccessToken(normalizedEmail, driveAccessToken)
+    }
+    val effectiveToken = driveAccessToken ?: getSavedDriveAccessToken(normalizedEmail)
+
+    val remoteBackup = AccountSyncManager.fetchGmailCloudBackup(
+      context = context,
+      email = normalizedEmail,
+      driveAccessToken = effectiveToken
+    ) ?: return Result.failure(
+      IllegalArgumentException("No Google Drive backup found yet for $normalizedEmail. Tap 'Back Up Now' to create your first backup.")
+    )
+
+    val beforeCount = expenseDao.getAllExpensesForUserSync(normalizedEmail).size
+    val account = restoreBackupIntoDatabase(remoteBackup)
+    val afterCount = expenseDao.getAllExpensesForUserSync(normalizedEmail).size
+    val newlyAdded = (afterCount - beforeCount).coerceAtLeast(0)
+
+    setLastBackupSizeBytes(normalizedEmail, remoteBackup.backupSizeBytes)
+
+    return Result.success(
+      GmailAuthSyncResult(
+        account = account,
+        restoredFromGoogleDrive = true,
+        restoredExpenseCount = if (newlyAdded > 0) newlyAdded else remoteBackup.expenses.size,
+        totalExpenseCount = afterCount,
+        backupSizeBytes = remoteBackup.backupSizeBytes,
+        lastBackupTimeMillis = remoteBackup.lastSyncedAt
+      )
+    )
+  }
+
+  private suspend fun mergeGuestDataIntoGmailAccount(gmailAddress: String) {
+    val guestExpenses = expenseDao.getAllExpensesForUserSync("guest")
+    if (guestExpenses.isNotEmpty()) {
+      val existingUserExpenses = expenseDao.getAllExpensesForUserSync(gmailAddress)
+      val existingSignatures = existingUserExpenses.map {
+        "${it.title}|${it.amount}|${it.category}|${it.dateMillis}"
+      }.toSet()
+
+      val newGuestExpenses = guestExpenses.filter { exp ->
+        val sig = "${exp.title}|${exp.amount}|${exp.category}|${exp.dateMillis}"
+        sig !in existingSignatures
+      }.map {
+        it.copy(id = 0L, userEmail = gmailAddress)
+      }
+
+      if (newGuestExpenses.isNotEmpty()) {
+        expenseDao.insertExpenses(newGuestExpenses)
+      }
+    }
+
+    val guestBudgets = expenseDao.getAllCategoryBudgetsSync("guest")
+    val existingBudgets = expenseDao.getAllCategoryBudgetsSync(gmailAddress)
+    if (guestBudgets.isNotEmpty() && existingBudgets.isEmpty()) {
+      expenseDao.upsertCategoryBudgets(guestBudgets.map { it.copy(userEmail = gmailAddress) })
+    }
+
+    val guestGoals = expenseDao.getAllMonthlyGoalsSync("guest")
+    val existingGoals = expenseDao.getAllMonthlyGoalsSync(gmailAddress)
+    if (guestGoals.isNotEmpty() && existingGoals.isEmpty()) {
+      expenseDao.insertMonthlyGoals(guestGoals.map { it.copy(userEmail = gmailAddress) })
+    }
   }
 
   suspend fun signOut() {
@@ -273,7 +372,10 @@ class ExpenseRepository(
     ensureDefaultBudgets("guest")
   }
 
-  suspend fun syncAccountData(userEmail: String): Boolean {
+  suspend fun syncAccountData(
+    userEmail: String,
+    driveAccessToken: String? = null
+  ): Boolean {
     val normalizedEmail = AccountSyncManager.normalizeEmail(userEmail)
     if (normalizedEmail == "guest" || normalizedEmail.isBlank()) return false
     val account = expenseDao.getUserAccountByEmail(normalizedEmail) ?: return false
@@ -281,6 +383,12 @@ class ExpenseRepository(
     val budgets = expenseDao.getAllCategoryBudgetsSync(normalizedEmail)
     val goals = expenseDao.getAllMonthlyGoalsSync(normalizedEmail)
     val now = System.currentTimeMillis()
+    val frequency = getBackupFrequency(normalizedEmail)
+
+    if (!driveAccessToken.isNullOrBlank()) {
+      setSavedDriveAccessToken(normalizedEmail, driveAccessToken)
+    }
+    val effectiveToken = driveAccessToken ?: getSavedDriveAccessToken(normalizedEmail)
 
     val payload = AccountBackupPayload(
       email = normalizedEmail,
@@ -290,43 +398,20 @@ class ExpenseRepository(
       lastSyncedAt = now,
       expenses = expenses,
       budgets = budgets,
-      goals = goals
+      goals = goals,
+      backupFrequency = frequency
     )
 
-    val synced = AccountSyncManager.syncAccountBackup(context, payload)
+    val jsonBytes = AccountSyncManager.serializeBackupJson(payload).toByteArray(Charsets.UTF_8).size
+    setLastBackupSizeBytes(normalizedEmail, jsonBytes)
+
+    val synced = AccountSyncManager.syncAccountBackup(
+      context = context,
+      payload = payload.copy(backupSizeBytes = jsonBytes),
+      driveAccessToken = effectiveToken
+    )
     expenseDao.insertOrUpdateUserAccount(account.copy(lastSyncedAt = now))
     return synced
-  }
-
-  suspend fun exportUserAccountBackup(userEmail: String, uri: Uri): Boolean {
-    val normalizedEmail = AccountSyncManager.normalizeEmail(userEmail)
-    val account = expenseDao.getUserAccountByEmail(normalizedEmail)
-    val expenses = expenseDao.getAllExpensesForUserSync(normalizedEmail)
-    val budgets = expenseDao.getAllCategoryBudgetsSync(normalizedEmail)
-    val goals = expenseDao.getAllMonthlyGoalsSync(normalizedEmail)
-    val now = System.currentTimeMillis()
-
-    val payload = AccountBackupPayload(
-      email = normalizedEmail,
-      displayName = account?.displayName ?: normalizedEmail.substringBefore("@"),
-      passwordHash = account?.passwordHash ?: "",
-      createdAt = account?.createdAt ?: now,
-      lastSyncedAt = now,
-      expenses = expenses,
-      budgets = budgets,
-      goals = goals
-    )
-    return AccountSyncManager.exportBackupToUri(context, uri, payload)
-  }
-
-  suspend fun importAndRestoreAccountBackup(uri: Uri): Result<UserAccountEntity> {
-    val payload = AccountSyncManager.importBackupFromUri(context, uri)
-      ?: return Result.failure(IllegalArgumentException("Invalid or corrupted backup file."))
-
-    val restoredAccount = restoreBackupIntoDatabase(payload)
-    setSavedActiveUserEmail(restoredAccount.email)
-    syncAccountData(restoredAccount.email)
-    return Result.success(restoredAccount)
   }
 
   private suspend fun restoreBackupIntoDatabase(payload: AccountBackupPayload): UserAccountEntity {
@@ -431,7 +516,6 @@ class ExpenseRepository(
       }
       expenseDao.insertCategoryBudgets(defaults)
     } else {
-      // Repair any previously saved shifted 64-bit colorHex values so logos are always visible
       val repaired = existing.mapNotNull { item ->
         val safeColor = DefaultCategories.hexLongToColor(
           item.colorHex,
@@ -451,4 +535,3 @@ class ExpenseRepository(
     }
   }
 }
-

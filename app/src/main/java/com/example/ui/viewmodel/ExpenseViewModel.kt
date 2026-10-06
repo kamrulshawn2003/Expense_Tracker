@@ -1,7 +1,6 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.AppDatabase
@@ -12,7 +11,6 @@ import com.example.data.model.ExpenseEntity
 import com.example.data.model.MonthlyGoalEntity
 import com.example.data.model.UserAccountEntity
 import com.example.data.repository.ExpenseRepository
-import com.example.notification.BudgetNotificationManager
 import com.example.util.AccountSyncManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,7 +58,7 @@ data class MonthBudgetReport(
   val spendingUsagePercentage: Float = if (spendingBudget > 0) (totalSpent / spendingBudget).toFloat() else 0f,
   val isOverSpendingBudget: Boolean = spendingBudget > 0 && totalSpent > spendingBudget,
   val netSavings: Double = savingsGoal,
-  val savingsGoalProgress: Float = 1f, // 0.0 to 1.0+
+  val savingsGoalProgress: Float = 1f,
   val isSavingsGoalMet: Boolean = true,
   val categorySummaries: List<CategorySpendingSummary>,
   val dailyBreakdown: List<DaySpendingSummary>,
@@ -81,7 +79,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
   private val repository: ExpenseRepository
   private val context = application.applicationContext
 
-  // Active signed-in user email ("guest" when signed out)
+  // Active signed-in Gmail user ("guest" when signed out)
   private val _activeUserEmail = MutableStateFlow("guest")
   val activeUserEmail: StateFlow<String> = _activeUserEmail.asStateFlow()
 
@@ -89,7 +87,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
   private val _selectedDateMillis = MutableStateFlow(System.currentTimeMillis())
   val selectedDateMillis: StateFlow<Long> = _selectedDateMillis.asStateFlow()
 
-  // Selected Year-Month for Monthly view (e.g. "2026-08")
+  // Selected Year-Month for Monthly view (e.g. "2026-10")
   private val _selectedYearMonth = MutableStateFlow(
     SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
   )
@@ -99,7 +97,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
   private val _dismissedAlerts = MutableStateFlow<Set<String>>(emptySet())
   val dismissedAlerts: StateFlow<Set<String>> = _dismissedAlerts.asStateFlow()
 
-  // Auth UI state
+  // Auth & Google Drive Backup UI state
   private val _authErrorMessage = MutableStateFlow<String?>(null)
   val authErrorMessage: StateFlow<String?> = _authErrorMessage.asStateFlow()
 
@@ -109,16 +107,31 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
   private val _isAuthLoading = MutableStateFlow(false)
   val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
 
-  val isFirebaseConfigured: Boolean
-    get() = AccountSyncManager.isFirebaseAvailable(context)
+  private val _backupFrequency = MutableStateFlow("Daily")
+  val backupFrequency: StateFlow<String> = _backupFrequency.asStateFlow()
+
+  private val _lastBackupSizeBytes = MutableStateFlow(0)
+  val lastBackupSizeBytes: StateFlow<Int> = _lastBackupSizeBytes.asStateFlow()
+
+  val googleOAuthClientId: String
+    get() = AccountSyncManager.getGoogleOAuthClientId(context)
 
   init {
     val database = AppDatabase.getDatabase(context, viewModelScope)
     repository = ExpenseRepository(database.expenseDao(), context)
     val savedEmail = repository.getSavedActiveUserEmail()
     _activeUserEmail.value = savedEmail
+    if (savedEmail != "guest") {
+      _backupFrequency.value = repository.getBackupFrequency(savedEmail)
+      _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(savedEmail)
+    }
     viewModelScope.launch {
       repository.ensureDefaultBudgets(savedEmail)
+      if (savedEmail != "guest" && AccountSyncManager.isValidGmailAddress(savedEmail)) {
+        // Automatically check & sync with Google Drive on launch
+        repository.restoreFromGoogleDrive(savedEmail)
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(savedEmail)
+      }
     }
   }
 
@@ -214,16 +227,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val income = goal.monthlyIncome
     val savingsGoal = goal.savingsGoal
 
-    // Pay-Yourself-First / Savings rule:
-    // After adding the saving amount, always count the rest of the amount for spendings.
-    // Savings amount does not have any relation with the spending amount.
     val spendingBudget = (income - savingsGoal).coerceAtLeast(0.0)
     val spendingRemaining = spendingBudget - totalSpent
     val isOverSpendingBudget = spendingBudget > 0 && totalSpent > spendingBudget
     val spendingUsage = if (spendingBudget > 0) (totalSpent / spendingBudget).toFloat() else 0f
     val currency = goal.currencySymbol
 
-    // Savings amount is dedicated and protected, never reduced by spendings
     val netSavings = savingsGoal
     val goalProgress = 1f
     val isGoalMet = true
@@ -288,7 +297,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     val topCategory = categorySummaries.firstOrNull { it.spent > 0 }?.categoryName
-    // Total monthly spending limit is the rest of income after savings
     val totalBudgetLimit = if (spendingBudget > 0) spendingBudget else budgetsList.sumOf { it.monthlyLimit }.let { if (it > 0) it else DefaultCategories.list.sumOf { c -> c.defaultLimit } }
     val remainingBudget = totalBudgetLimit - totalSpent
 
@@ -374,7 +382,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     )
   )
 
-  // List of active limit exceeded alerts for in-app banner
   val activeAlerts: StateFlow<List<CategorySpendingSummary>> = combine(
     monthlyReport,
     _dismissedAlerts
@@ -387,10 +394,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     _authFeedbackMessage.value = null
   }
 
-  fun createAccount(
-    displayName: String,
+  /**
+   * Connects a user's Gmail (@gmail.com) account, automatically restores any existing
+   * WhatsApp-style backup from Google Drive, and backs up current expense history.
+   */
+  fun connectWithGmail(
     email: String,
-    password: String,
+    displayName: String = "",
+    googleIdToken: String? = null,
+    driveAccessToken: String? = null,
     claimGuestExpenses: Boolean = true,
     onSuccess: () -> Unit = {}
   ) {
@@ -398,42 +410,85 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
       _isAuthLoading.value = true
       _authErrorMessage.value = null
       _authFeedbackMessage.value = null
-      val result = repository.createAccount(displayName, email, password, claimGuestExpenses)
+
+      val result = repository.signInOrSignUpWithGmail(
+        email = email,
+        displayName = displayName,
+        googleIdToken = googleIdToken,
+        driveAccessToken = driveAccessToken,
+        claimGuestExpenses = claimGuestExpenses
+      )
+
       _isAuthLoading.value = false
       result.fold(
-        onSuccess = { account ->
-          _activeUserEmail.value = account.email
-          _authFeedbackMessage.value = "Account created & expenses backed up for ${account.displayName}!"
+        onSuccess = { syncResult ->
+          _activeUserEmail.value = syncResult.account.email
+          _backupFrequency.value = repository.getBackupFrequency(syncResult.account.email)
+          _lastBackupSizeBytes.value = syncResult.backupSizeBytes
+          _authFeedbackMessage.value = if (syncResult.restoredFromGoogleDrive && syncResult.restoredExpenseCount > 0) {
+            "Google Drive backup found! Restored ${syncResult.totalExpenseCount} expenses for ${syncResult.account.email}."
+          } else {
+            "Connected to Google Drive (${syncResult.account.email})! Your expenses are automatically backed up."
+          }
           onSuccess()
         },
         onFailure = { err ->
-          _authErrorMessage.value = err.message ?: "Could not create account."
+          _authErrorMessage.value = err.message ?: "Could not connect Gmail account."
         }
       )
     }
   }
 
-  fun signIn(
-    email: String,
-    password: String,
-    onSuccess: () -> Unit = {}
-  ) {
+  /**
+   * Triggers an immediate WhatsApp-style backup to Google Drive for the active Gmail account.
+   */
+  fun syncAccountNow(driveAccessToken: String? = null) {
+    val email = _activeUserEmail.value
+    if (email == "guest") return
+    viewModelScope.launch {
+      _isAuthLoading.value = true
+      _authErrorMessage.value = null
+      repository.syncAccountData(email, driveAccessToken)
+      _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(email)
+      _isAuthLoading.value = false
+      _authFeedbackMessage.value = "Backed up to Google Drive (${email})!"
+    }
+  }
+
+  /**
+   * Restores the latest expense history backup from Google Drive for the connected Gmail account.
+   */
+  fun restoreFromGoogleDriveNow(driveAccessToken: String? = null) {
+    val email = _activeUserEmail.value
+    if (email == "guest") return
     viewModelScope.launch {
       _isAuthLoading.value = true
       _authErrorMessage.value = null
       _authFeedbackMessage.value = null
-      val result = repository.signIn(email, password)
+      val result = repository.restoreFromGoogleDrive(email, driveAccessToken)
       _isAuthLoading.value = false
       result.fold(
-        onSuccess = { account ->
-          _activeUserEmail.value = account.email
-          _authFeedbackMessage.value = "Welcome back, ${account.displayName}! Your previous expenses are restored."
-          onSuccess()
+        onSuccess = { syncResult ->
+          _lastBackupSizeBytes.value = syncResult.backupSizeBytes
+          _authFeedbackMessage.value =
+            "Restored from Google Drive! ${syncResult.totalExpenseCount} expense records are active for ${syncResult.account.email}."
         },
         onFailure = { err ->
-          _authErrorMessage.value = err.message ?: "Sign in failed."
+          _authErrorMessage.value = err.message ?: "Could not restore from Google Drive."
         }
       )
+    }
+  }
+
+  fun updateBackupFrequency(frequency: String) {
+    val email = _activeUserEmail.value
+    _backupFrequency.value = frequency
+    if (email != "guest") {
+      repository.setBackupFrequency(email, frequency)
+      viewModelScope.launch {
+        repository.syncAccountData(email)
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(email)
+      }
     }
   }
 
@@ -441,52 +496,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       repository.signOut()
       _activeUserEmail.value = "guest"
-      _authFeedbackMessage.value = "Signed out. Sign in anytime to view your saved account expenses."
+      _authFeedbackMessage.value = "Disconnected Gmail account. Sign in with Gmail anytime to restore from Google Drive."
       _authErrorMessage.value = null
-    }
-  }
-
-  fun syncAccountNow() {
-    val email = _activeUserEmail.value
-    if (email == "guest") return
-    viewModelScope.launch {
-      _isAuthLoading.value = true
-      repository.syncAccountData(email)
-      _isAuthLoading.value = false
-      _authFeedbackMessage.value = "All expenses & budgets synced and backed up!"
-    }
-  }
-
-  fun exportAccountBackup(uri: Uri) {
-    val email = _activeUserEmail.value
-    viewModelScope.launch {
-      _isAuthLoading.value = true
-      val ok = repository.exportUserAccountBackup(email, uri)
-      _isAuthLoading.value = false
-      if (ok) {
-        _authFeedbackMessage.value = "Backup file saved! You can restore this file even after reinstalling the app."
-      } else {
-        _authErrorMessage.value = "Failed to export backup file."
-      }
-    }
-  }
-
-  fun importAccountBackup(uri: Uri, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
-      _isAuthLoading.value = true
-      _authErrorMessage.value = null
-      val result = repository.importAndRestoreAccountBackup(uri)
-      _isAuthLoading.value = false
-      result.fold(
-        onSuccess = { account ->
-          _activeUserEmail.value = account.email
-          _authFeedbackMessage.value = "Restored account & expenses for ${account.displayName}!"
-          onSuccess()
-        },
-        onFailure = { err ->
-          _authErrorMessage.value = err.message ?: "Could not restore backup file."
-        }
-      )
     }
   }
 
@@ -497,12 +508,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
   fun resetCurrentMonthCycle() {
     viewModelScope.launch {
       repository.resetMonthCycleExpenses(_activeUserEmail.value, _selectedYearMonth.value)
+      _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(_activeUserEmail.value)
     }
   }
 
   fun setSelectedDate(millis: Long) {
     _selectedDateMillis.value = millis
-    // Also sync the month view to this date's month
     _selectedYearMonth.value = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date(millis))
   }
 
@@ -546,24 +557,39 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           userEmail = currentEmail
         )
       )
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
   fun updateExpense(expense: ExpenseEntity) {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
-      repository.updateExpense(expense.copy(userEmail = _activeUserEmail.value))
+      repository.updateExpense(expense.copy(userEmail = currentEmail))
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
   fun deleteExpense(expense: ExpenseEntity) {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
       repository.deleteExpense(expense)
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
   fun deleteExpenseById(id: Long) {
+    val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
-      repository.deleteExpenseById(id, _activeUserEmail.value)
+      repository.deleteExpenseById(id, currentEmail)
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
@@ -586,6 +612,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           userEmail = currentEmail
         )
       )
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
@@ -593,6 +622,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val currentEmail = _activeUserEmail.value
     viewModelScope.launch {
       repository.deleteCategoryBudget(currentEmail, categoryName)
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
@@ -617,6 +649,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
           userEmail = currentEmail
         )
       )
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 
@@ -632,6 +667,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
       )
       repository.updateMonthlyGoal(updated)
       _monthlyGoalData.value = updated
+      if (currentEmail != "guest") {
+        _lastBackupSizeBytes.value = repository.getLastBackupSizeBytes(currentEmail)
+      }
     }
   }
 }

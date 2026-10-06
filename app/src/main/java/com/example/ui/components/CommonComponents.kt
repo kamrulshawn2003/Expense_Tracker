@@ -55,18 +55,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.data.model.CategoryMeta
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.GoalGold
 import com.example.ui.theme.IncomeGreen
 import com.example.ui.viewmodel.CategorySpendingSummary
 import com.example.ui.viewmodel.DaySpendingSummary
+import java.io.File
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -79,9 +82,15 @@ fun CategoryIconBadge(
   meta: CategoryMeta,
   modifier: Modifier = Modifier,
   size: Dp = 44.dp,
-  iconSize: Dp = 22.dp
+  iconSize: Dp = 22.dp,
+  pictureUri: String? = null
 ) {
   val safeColor = if (meta.color.alpha < 0.2f) Color(0xFF10B981) else meta.color.copy(alpha = 1f)
+  val validPhotoFile = remember(pictureUri) {
+    if (!pictureUri.isNullOrBlank() && pictureUri.startsWith("/")) {
+      File(pictureUri).takeIf { it.exists() }
+    } else null
+  }
   Box(
     modifier = modifier
       .size(size)
@@ -90,12 +99,21 @@ fun CategoryIconBadge(
       .border(1.dp, safeColor.copy(alpha = 0.32f), RoundedCornerShape(12.dp)),
     contentAlignment = Alignment.Center
   ) {
-    Icon(
-      imageVector = meta.icon,
-      contentDescription = meta.name,
-      tint = safeColor,
-      modifier = Modifier.size(iconSize)
-    )
+    if (validPhotoFile != null) {
+      AsyncImage(
+        model = validPhotoFile,
+        contentDescription = meta.name,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize()
+      )
+    } else {
+      Icon(
+        imageVector = meta.icon,
+        contentDescription = meta.name,
+        tint = safeColor,
+        modifier = Modifier.size(iconSize)
+      )
+    }
   }
 }
 

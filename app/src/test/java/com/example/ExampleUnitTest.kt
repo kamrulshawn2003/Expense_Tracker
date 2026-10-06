@@ -100,6 +100,16 @@ class ExampleUnitTest {
     assertEquals(144.0, sweeps[0], 0.001) // 40% of 360
     assertEquals(40.0, percentages[0], 0.001)
   }
+
+  @Test
+  fun gmailOnlyValidation_acceptsGmailAndRejectsOtherDomains() {
+    assertTrue(com.example.util.AccountSyncManager.isValidGmailAddress("kamrulislamshawn2003@gmail.com"))
+    assertTrue(com.example.util.AccountSyncManager.isValidGmailAddress("  Alex.Chen@Gmail.com "))
+    assertFalse(com.example.util.AccountSyncManager.isValidGmailAddress("user@yahoo.com"))
+    assertFalse(com.example.util.AccountSyncManager.isValidGmailAddress("user@outlook.com"))
+    assertFalse(com.example.util.AccountSyncManager.isValidGmailAddress("@gmail.com"))
+    assertEquals("2.0 KB", com.example.util.AccountSyncManager.formatBackupSize(2048))
+  }
 }
 
 
